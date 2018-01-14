@@ -229,6 +229,7 @@ module Gen(P : Params) = struct
       ~dir ~name:alias_name
       ~stamp:(Sexp.List [Atom "ppx-runner"; Atom name])
       (let module A = Action in
+       Build.path exe >>>
        match runner with
        | Bench ->
          Build.return
