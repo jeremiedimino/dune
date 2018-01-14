@@ -145,6 +145,22 @@ module Library : sig
       | Ppx_rewriter
   end
 
+  module Ppx_runner : sig
+    module Kind : sig
+      type t = Bench | Test
+
+      val all : t list
+    end
+
+    type t = Kind.t * string
+  end
+
+  module Inline_tests : sig
+    type t =
+      { deps: Dep_conf.t list
+      }
+  end
+
   type t =
     { name                     : string
     ; public                   : Public_lib.t option
@@ -165,6 +181,8 @@ module Library : sig
     ; optional                 : bool
     ; buildable                : Buildable.t
     ; dynlink                  : bool
+    ; ppx_runner_library       : Ppx_runner.t option
+    ; inline_tests             : Inline_tests.t
     }
 
   val has_stubs : t -> bool

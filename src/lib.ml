@@ -101,3 +101,14 @@ let remove_dups_preserve_order libs =
   in
   loop String_set.empty libs []
 ;;
+
+let pp_runners t =
+  Jbuild.Library.Ppx_runner.Kind.all
+  |> List.filter_map ~f:(fun kind ->
+    match t with
+    | Internal (_, { Jbuild.Library.ppx_runner_library = Some (kind', p) ; _ })
+      when kind = kind' ->
+      Some (kind, [p])
+    | Internal (_, { Jbuild.Library.ppx_runner_library = _ ; _ }) -> None
+    | External { Findlib.test_runner_runtime_deps = libs ; _ } ->
+      Some (kind, List.map ~f:(fun f -> f.Findlib.name) libs))

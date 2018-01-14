@@ -184,7 +184,72 @@ module Gen(P : Params) = struct
   let alias_module_build_sandbox = Scanf.sscanf ctx.version "%u.%u"
      (fun a b -> a, b) <= (4, 02)
 
-  let library_rules (lib : Library.t) ~dir ~all_modules ~files ~scope =
+  let rec runner_rule ((runner : Jbuild.Library.Ppx_runner.Kind.t), deps) ~dir
+            ~(lib : Library.t) ~scope =
+    let name =
+      match runner with
+      | Bench -> lib.name ^ "_bench_runner"
+      | Test -> lib.name ^ "_test_runner"
+    in
+    let alias_name =
+      match runner with
+      | Bench -> "bench"
+      | Test -> "runtest"
+    in
+    executables_rules
+      ~last_lib:"libmain.main"
+      ({ Executables.names = [name]
+       ; link_executables = true
+       ; link_flags = Ordered_set_lang.Unexpanded.t (
+           Sexp.add_loc ~loc:Loc.none (List [Atom "-linkall"])
+         )
+       ; modes = Mode.Dict.Set.all
+       ; buildable =
+           { Buildable.modules = Ordered_set_lang.t (
+               Sexp.add_loc ~loc:Loc.none (List [])
+             )
+           ; libraries =
+               (Lib_dep.direct lib.name) :: (List.map ~f:Lib_dep.direct deps)
+           ; preprocess = lib.buildable.preprocess
+           ; preprocessor_deps = lib.buildable.preprocessor_deps
+           ; flags = Ordered_set_lang.Unexpanded.standard
+           ; ocamlc_flags = Ordered_set_lang.Unexpanded.standard
+           ; ocamlopt_flags = Ordered_set_lang.Unexpanded.standard
+           ; js_of_ocaml = Js_of_ocaml.default
+           ; gen_dot_merlin = false
+           ; lint = Jbuild.Lint.no_lint
+           }
+       })
+      ~dir
+      ~all_modules:String_map.empty
+      ~scope
+    |> ignore;
+    let exe = Path.relative dir (name ^ ".exe") in
+    add_alias
+      ~dir ~name:alias_name
+      ~stamp:(Sexp.List [Atom "ppx-runner"; Atom name])
+      (let module A = Action in
+       match runner with
+       | Bench ->
+         Build.return
+           (A.chdir dir
+              (A.setenv "BENCHMARKS_RUNNER" "RUNNER"
+                 (A.setenv "BENCH_LIB" lib.name
+                    (A.run (Ok exe) []))))
+       | Test ->
+         SC.Deps.interpret sctx ~scope ~dir lib.inline_tests.deps
+         >>^ fun _ ->
+         A.chdir dir
+           (A.run (Ok exe) ["inline-test-runner"; lib.name]))
+
+  and runner_rules ~dir ~(lib : Library.t) ~scope =
+    Preprocess_map.pps lib.buildable.preprocess
+    |> List.rev_map ~f:Pp.to_string
+    |> List.filter_map ~f:(SC.Libs.find sctx ~from:dir)
+    |> List.concat_map ~f:Lib.pp_runners
+    |> List.iter ~f:(runner_rule ~dir ~lib ~scope)
+
+  and library_rules (lib : Library.t) ~dir ~all_modules ~files ~scope =
     let dep_kind = if lib.optional then Build.Optional else Required in
     let flags = Ocaml_flags.make lib.buildable sctx ~scope ~dir in
     let modules =
@@ -275,6 +340,10 @@ module Gen(P : Params) = struct
       ~libraries:lib.buildable.libraries
       ~ppx_runtime_libraries:lib.ppx_runtime_libraries;
     SC.Libs.add_select_rules sctx ~dir lib.buildable.libraries;
+
+    Option.iter lib.ppx_runner_library ~f:(fun runner ->
+      SC.Libs.setup_runner_runtime_deps sctx ~dir ~dep_kind ~item:lib.name ~runner
+    );
 
     let dynlink = lib.dynlink in
     let js_of_ocaml = lib.buildable.js_of_ocaml in
@@ -417,6 +486,10 @@ module Gen(P : Params) = struct
       | None -> Ocaml_flags.common flags
       | Some m -> Ocaml_flags.prepend_common ["-open"; m.name] flags |> Ocaml_flags.common
     in
+
+    (* test/bench runners if they are present *)
+    runner_rules ~dir ~lib ~scope;
+
     { Merlin.
       requires = real_requires
     ; flags
@@ -429,7 +502,7 @@ module Gen(P : Params) = struct
      | Executables stuff                                               |
      +-----------------------------------------------------------------+ *)
 
-  let build_exe ~js_of_ocaml ~flags ~scope ~dir ~requires ~name ~mode ~modules ~dep_graph
+  and build_exe ~js_of_ocaml ~flags ~scope ~dir ~requires ~name ~mode ~modules ~dep_graph
         ~link_flags ~force_custom_bytecode =
     let exe_ext = Mode.exe_ext mode in
     let mode, link_custom, compiler =
@@ -443,14 +516,18 @@ module Gen(P : Params) = struct
       Build.fanout
         (requires
          >>> Build.dyn_paths (Build.arr (Lib.archive_files ~mode ~ext_lib:ctx.ext_lib)))
-        (dep_graph
-         >>> Build.arr (fun dep_graph ->
-           Ocamldep.names_to_top_closed_cm_files
-             ~dir
-             ~dep_graph
-             ~modules
-             ~mode
-             [String.capitalize_ascii name]))
+        (if String_map.is_empty modules then (
+           Build.arr (fun _ -> [])
+         ) else (
+           dep_graph
+           >>> Build.arr (fun dep_graph ->
+             Ocamldep.names_to_top_closed_cm_files
+               ~dir
+               ~dep_graph
+               ~modules
+               ~mode
+               [String.capitalize_ascii name])
+         ))
     in
     let objs (libs, cm) =
       if mode = Mode.Byte then
@@ -466,19 +543,18 @@ module Gen(P : Params) = struct
         libs @ List.map ~f:(Path.change_extension ~ext:ctx.ext_obj) cm
     in
     SC.add_rule sctx
-      ((libs_and_cm >>> Build.dyn_paths (Build.arr objs))
-       &&&
-       Build.fanout
-       (Ocaml_flags.get flags mode)
-       (SC.expand_and_eval_set sctx ~scope ~dir link_flags ~standard:[])
+      (Build.fanout3
+         (libs_and_cm >>> Build.dyn_paths (Build.arr objs))
+         (Ocaml_flags.get flags mode)
+         (SC.expand_and_eval_set sctx ~scope ~dir link_flags ~standard:[])
        >>>
        Build.run ~context:ctx
          (Ok compiler)
-         [ Dyn (fun (_, (flags,_)) -> As flags)
+         [ Dyn (fun (_, flags,_) -> As flags)
          ; A "-o"; Target exe
-         ; Dyn (fun (_, (_, link_flags)) -> As (link_custom @ link_flags))
-         ; Dyn (fun ((libs, _), _) -> Lib.link_flags libs ~mode)
-         ; Dyn (fun ((_, cm_files), _) -> Deps cm_files)
+         ; Dyn (fun (_, _, link_flags) -> As (link_custom @ link_flags))
+         ; Dyn (fun ((libs, _), _, _) -> Lib.link_flags libs ~mode)
+         ; Dyn (fun ((_, cm_files), _, _) -> Deps cm_files)
          ]);
     if mode = Mode.Byte then
       let rules = Js_of_ocaml_rules.build_exe sctx ~dir ~js_of_ocaml ~src:exe in
@@ -489,7 +565,8 @@ module Gen(P : Params) = struct
       in
       SC.add_rules sctx (List.map rules ~f:(fun r -> libs_and_cm_and_flags >>> r))
 
-  let executables_rules (exes : Executables.t) ~dir ~all_modules ~scope =
+
+  and executables_rules ?last_lib (exes : Executables.t) ~dir ~all_modules ~scope =
     let dep_kind = Build.Required in
     let flags = Ocaml_flags.make exes.buildable sctx ~scope ~dir in
     let modules =
@@ -499,11 +576,14 @@ module Gen(P : Params) = struct
       String_map.map modules ~f:(fun (m : Module.t) ->
         { m with obj_name = Utils.obj_name_of_basename m.impl.name })
     in
-    List.iter exes.names ~f:(fun name ->
-      if not (String_map.mem (String.capitalize_ascii name) modules) then
-        die "executable %s in %s doesn't have a corresponding .ml file"
-          name (Path.to_string dir));
-
+    begin match last_lib with
+    | Some _ -> ()
+    | None ->
+      List.iter exes.names ~f:(fun name ->
+        if not (String_map.mem (String.capitalize_ascii name) modules) then
+          die "executable %s in %s doesn't have a corresponding .ml file"
+            name (Path.to_string dir))
+    end;
     let modules =
       SC.PP.pp_and_lint_modules sctx ~dir ~dep_kind ~modules ~scope
         ~preprocess:exes.buildable.preprocess
@@ -524,6 +604,23 @@ module Gen(P : Params) = struct
         ~preprocess:exes.buildable.preprocess
         ~virtual_deps:[]
         ~has_dot_merlin:exes.buildable.gen_dot_merlin
+    in
+
+    let requires =
+      match last_lib with
+      | None -> requires
+      | Some lib ->
+        begin match SC.Libs.find sctx ~from:dir lib with
+        | None ->
+          Build.fail { fail = fun () ->
+            die "@{<error>Error@}: I couldn't find '%s'.\n\
+                 Hint: opam install libmain" lib
+          }
+          >>>
+          requires
+        | Some lib ->
+          requires >>^ (fun libs -> libs @ [lib])
+        end
     in
 
     SC.Libs.add_select_rules sctx ~dir exes.buildable.libraries;
@@ -551,11 +648,11 @@ module Gen(P : Params) = struct
      | User rules                                                      |
      +-----------------------------------------------------------------+ *)
 
-  let interpret_locks ~dir ~scope locks =
+  and interpret_locks ~dir ~scope locks =
     List.map locks ~f:(fun s ->
       Path.relative dir (SC.expand_vars sctx ~dir ~scope s))
 
-  let user_rule (rule : Rule.t) ~dir ~scope =
+  and user_rule (rule : Rule.t) ~dir ~scope =
     let targets : SC.Action.targets =
       match rule.targets with
       | Infer -> Infer
@@ -573,7 +670,7 @@ module Gen(P : Params) = struct
          ~targets
          ~scope)
 
-  let add_alias ~dir ~name ~stamp ?(locks=[]) build =
+  and add_alias ~dir ~name ~stamp ?(locks=[]) build =
     let alias = Alias.make name ~dir in
     SC.add_rule sctx ~locks
       (Alias.add_build (SC.aliases sctx) alias ~stamp build)
