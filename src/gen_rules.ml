@@ -184,71 +184,22 @@ module Gen(P : Params) = struct
   let alias_module_build_sandbox = Scanf.sscanf ctx.version "%u.%u"
      (fun a b -> a, b) <= (4, 02)
 
-  let rec runner_rule ((runner : Jbuild.Library.Ppx_runner.Kind.t), deps) ~dir
-            ~(lib : Library.t) ~scope =
-    let name =
-      match runner with
-      | Bench -> lib.name ^ "_bench_runner"
-      | Test -> lib.name ^ "_test_runner"
-    in
-    let alias_name =
-      match runner with
-      | Bench -> "bench"
-      | Test -> "runtest"
-    in
-    executables_rules
-      ~last_lib:"libmain.main"
-      ({ Executables.names = [name]
-       ; link_executables = true
-       ; link_flags = Ordered_set_lang.Unexpanded.t (
-           Sexp.add_loc ~loc:Loc.none (List [Atom "-linkall"])
-         )
-       ; modes = Mode.Dict.Set.all
-       ; buildable =
-           { Buildable.modules = Ordered_set_lang.t (
-               Sexp.add_loc ~loc:Loc.none (List [])
-             )
-           ; libraries =
-               (Lib_dep.direct lib.name) :: (List.map ~f:Lib_dep.direct deps)
-           ; preprocess = lib.buildable.preprocess
-           ; preprocessor_deps = lib.buildable.preprocessor_deps
-           ; flags = Ordered_set_lang.Unexpanded.standard
-           ; ocamlc_flags = Ordered_set_lang.Unexpanded.standard
-           ; ocamlopt_flags = Ordered_set_lang.Unexpanded.standard
-           ; js_of_ocaml = Js_of_ocaml.default
-           ; gen_dot_merlin = false
-           ; lint = Jbuild.Lint.no_lint
-           }
-       })
-      ~dir
-      ~all_modules:String_map.empty
-      ~scope
-    |> ignore;
-    let exe = Path.relative dir (name ^ ".exe") in
-    add_alias
-      ~dir ~name:alias_name
-      ~stamp:(Sexp.List [Atom "ppx-runner"; Atom name])
-      (let module A = Action in
-       Build.path exe >>>
-       match runner with
-       | Bench ->
-         Build.return
-           (A.chdir dir
-              (A.setenv "BENCHMARKS_RUNNER" "RUNNER"
-                 (A.setenv "BENCH_LIB" lib.name
-                    (A.run (Ok exe) []))))
-       | Test ->
-         SC.Deps.interpret sctx ~scope ~dir lib.inline_tests.deps
-         >>^ fun _ ->
-         A.chdir dir
-           (A.run (Ok exe) ["inline-test-runner"; lib.name]))
-
-  and runner_rules ~dir ~(lib : Library.t) ~scope =
-    Preprocess_map.pps lib.buildable.preprocess
-    |> List.rev_map ~f:Pp.to_string
-    |> List.filter_map ~f:(SC.Libs.find sctx ~from:dir)
-    |> List.concat_map ~f:Lib.pp_runners
-    |> List.iter ~f:(runner_rule ~dir ~lib ~scope)
+  let rec runner_rules ~dir ~(lib : Library.t) ~scope =
+    Option.iter (Inline_lib.rule sctx ~lib ~dir ~scope)
+      ~f:(fun { Inline_lib.exe ; alias_name ; alias_action
+              ; alias_stamp ; last_lib } ->
+        executables_rules
+          ~last_lib
+          exe
+          ~dir
+          ~all_modules:String_map.empty
+          ~scope
+        |> ignore;
+        add_alias ~dir
+          ~name:alias_name
+          ~stamp:alias_stamp
+          alias_action
+      )
 
   and library_rules (lib : Library.t) ~dir ~all_modules ~files ~scope =
     let dep_kind = if lib.optional then Build.Optional else Required in
@@ -488,7 +439,7 @@ module Gen(P : Params) = struct
       | Some m -> Ocaml_flags.prepend_common ["-open"; m.name] flags |> Ocaml_flags.common
     in
 
-    (* test/bench runners if they are present *)
+    (* test runners if they are present *)
     runner_rules ~dir ~lib ~scope;
 
     { Merlin.
