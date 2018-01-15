@@ -54,9 +54,7 @@ let archives ?(preds=[]) name =
   ; plugin  (preds @ [Pos "native"]) (name ^ ".cmxs")
   ]
 
-let gen_lib pub_name (lib : Library.t) ~lib_deps
-      ~ppx_runtime_deps:ppx_rt_deps ~test_runner_runtime_deps
-      ~bench_runner_runtime_deps ~version =
+let gen_lib pub_name (lib : Library.t) ~lib_deps ~ppx_runtime_deps:ppx_rt_deps ~version =
   let desc =
     match lib.synopsis with
     | Some s -> s
@@ -86,8 +84,6 @@ let gen_lib pub_name (lib : Library.t) ~lib_deps
                         dependencies of"
              ; Comment "a preprocessor"
              ; ppx_runtime_deps ppx_rt_deps
-             ; ppx_runtime_deps ~preds:[Pos "test_runner"] test_runner_runtime_deps
-             ; ppx_runtime_deps ~preds:[Pos "bench_runner"] bench_runner_runtime_deps
              ]
 
            (* Deprecated ppx method support *)
@@ -146,20 +142,8 @@ let gen ~package ~version ~stanzas ~resolve_lib_dep_names =
         resolve_lib_dep_names ~dir
           (List.map lib.ppx_runtime_libraries ~f:Lib_dep.direct)
       in
-      let (test_runner_runtime_deps, bench_runner_runtime_deps) =
-        match lib.ppx_runner_library with
-        | None ->
-          ([], [])
-        | Some (kind, name) ->
-          let deps = resolve_lib_dep_names ~dir [Lib_dep.direct name] in
-          begin match kind with
-          | Test -> (deps, [])
-          | Bench -> ([], deps)
-          end
-      in
       (pub_name,
-       gen_lib pub_name lib ~lib_deps ~ppx_runtime_deps
-         ~test_runner_runtime_deps ~bench_runner_runtime_deps ~version))
+       gen_lib pub_name lib ~lib_deps ~ppx_runtime_deps ~version))
   in
   let pkgs =
     List.map pkgs ~f:(fun (pn, meta) ->

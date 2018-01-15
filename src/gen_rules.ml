@@ -293,10 +293,6 @@ module Gen(P : Params) = struct
       ~ppx_runtime_libraries:lib.ppx_runtime_libraries;
     SC.Libs.add_select_rules sctx ~dir lib.buildable.libraries;
 
-    Option.iter lib.ppx_runner_library ~f:(fun runner ->
-      SC.Libs.setup_runner_runtime_deps sctx ~dir ~dep_kind ~item:lib.name ~runner
-    );
-
     let dynlink = lib.dynlink in
     let js_of_ocaml = lib.buildable.js_of_ocaml in
     Module_compilation.build_modules sctx

@@ -151,9 +151,6 @@ type package =
   ; jsoo_runtime     : string list
   ; requires         : package list
   ; ppx_runtime_deps : package list
-
-  ; test_runner_runtime_deps : package list
-  ; bench_runner_runtime_deps : package list
   }
 
 module Package_not_available = struct
@@ -246,8 +243,6 @@ module Pkg_step1 = struct
     { package          : package
     ; requires         : string list
     ; ppx_runtime_deps : string list
-    ; test_runner_runtime_deps : string list
-    ; bench_runner_runtime_deps : string list
     ; exists           : bool
     ; required_by      : string list
     }
@@ -285,8 +280,6 @@ let parse_package t ~name ~parent_dir ~vars ~required_by =
                        (archives "plugin" preds)
     ; requires    = []
     ; ppx_runtime_deps = []
-    ; test_runner_runtime_deps = []
-    ; bench_runner_runtime_deps = []
     }
   in
   let exists_if = Vars.get_words vars "exists_if" [] in
@@ -298,8 +291,6 @@ let parse_package t ~name ~parent_dir ~vars ~required_by =
     package          = pkg
   ; requires         = Vars.get_words vars "requires"         preds
   ; ppx_runtime_deps = Vars.get_words vars "ppx_runtime_deps" preds
-  ; test_runner_runtime_deps = Vars.get_words vars "ppx_runtime_deps" ("test_runner" :: preds)
-  ; bench_runner_runtime_deps = Vars.get_words vars "ppx_runtime_deps" ("bench_runner" :: preds)
   ; exists           = exists
   ; required_by
   }
@@ -379,12 +370,7 @@ let rec load_meta_rec t ~fq_name ~packages ~required_by =
                 List.fold_left deps ~init:acc ~f:(fun acc dep ->
                   String_map.add acc ~key:dep ~data:pkg.package.name)
               in
-              List.fold_left ~init:acc ~f:add_deps
-                [ pkg.requires
-                ; pkg.ppx_runtime_deps
-                ; pkg.test_runner_runtime_deps
-                ; pkg.bench_runner_runtime_deps
-                ]
+              add_deps (add_deps acc pkg.requires) pkg.ppx_runtime_deps
             else
               acc)
       in
@@ -399,12 +385,10 @@ module Local_closure =
       type t = Pkg_step1.t
       let key (t : t) = t.package.name
       let deps (t : t) packages =
-        List.concat_map
-          [ t.requires
-          ; t.ppx_runtime_deps
-          ; t.test_runner_runtime_deps
-          ; t.bench_runner_runtime_deps
-          ] ~f:(List.filter_map ~f:(fun name -> String_map.find name packages))
+        List.filter_map t.requires ~f:(fun name ->
+          String_map.find name packages) @
+        List.filter_map t.ppx_runtime_deps ~f:(fun name ->
+          String_map.find name packages)
     end)
 
 let remove_dups_preserve_order pkgs =
@@ -462,40 +446,24 @@ let load_meta t ~fq_name ~required_by =
           let ppx_runtime_deps, missing_deps =
             resolve_deps pkg.ppx_runtime_deps missing_deps
           in
-          let test_runner_runtime_deps, missing_deps =
-            resolve_deps pkg.test_runner_runtime_deps missing_deps
-          in
-          let bench_runner_runtime_deps, missing_deps =
-            resolve_deps pkg.bench_runner_runtime_deps missing_deps
-          in
           match missing_deps with
           | [] ->
             let requires =
               remove_dups_preserve_order
                 (List.concat_map requires ~f:(fun pkg -> pkg.requires) @ requires)
             in
-            let runtime_deps ppx_runtime_deps runtime_deps =
-              remove_dups_preserve_order (
-                List.concat
-                  [ List.concat_map ppx_runtime_deps ~f:(fun pkg -> pkg.requires)
-                  ; ppx_runtime_deps
-                  ; runtime_deps
-                  ]
-              ) in
             let ppx_runtime_deps =
-              runtime_deps ppx_runtime_deps (
-                List.concat_map requires ~f:(fun pkg -> pkg.ppx_runtime_deps)
-              ) in
-            let test_runner_runtime_deps =
-              runtime_deps test_runner_runtime_deps ppx_runtime_deps in
-            let bench_runner_runtime_deps =
-              runtime_deps bench_runner_runtime_deps ppx_runtime_deps in
+              remove_dups_preserve_order
+                (List.concat
+                   [ List.concat_map ppx_runtime_deps ~f:(fun pkg -> pkg.requires)
+                   ; ppx_runtime_deps
+                   ; List.concat_map requires ~f:(fun pkg -> pkg.ppx_runtime_deps)
+                   ])
+            in
             let pkg =
               { pkg.package with
                 requires
               ; ppx_runtime_deps
-              ; test_runner_runtime_deps
-              ; bench_runner_runtime_deps
               }
             in
             Present pkg
