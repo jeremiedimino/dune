@@ -186,8 +186,7 @@ module Gen(P : Params) = struct
 
   let rec runner_rules ~dir ~(lib : Library.t) ~scope =
     Option.iter (Inline_lib.rule sctx ~lib ~dir ~scope)
-      ~f:(fun { Inline_lib.exe ; alias_name ; alias_action
-              ; alias_stamp ; last_lib } ->
+      ~f:(fun { Inline_lib.exe ; alias_name ; alias_action ; alias_stamp ; last_lib } ->
         executables_rules
           ~last_lib
           exe
