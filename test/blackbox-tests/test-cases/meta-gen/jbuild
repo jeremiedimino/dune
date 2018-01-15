@@ -18,7 +18,6 @@
   (synopsis "ppx rewriter")
   (libraries (foobar))
   (public_name foobar.rewriter)
-  (ppx_runner_library (test foobar_baz))
   (ppx_runtime_libraries (foobar_baz))
   (kind ppx_rewriter)))
 
