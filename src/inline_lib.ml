@@ -54,6 +54,7 @@ let setup_rules test_libs ~sctx ~dir ~(lib : Jbuild.Library.t) ~scope ~modules =
             Sexp.add_loc ~loc:Loc.none (List [])
           )
         ; libraries = Lib_dep.direct lib.name
+                      :: Lib_dep.direct "ppx_inline_test.runner.lib"
                       :: (Test_lib.libs_of_set test_libs)
         ; preprocess = lib.buildable.preprocess
         ; preprocessor_deps = lib.buildable.preprocessor_deps
@@ -66,6 +67,7 @@ let setup_rules test_libs ~sctx ~dir ~(lib : Jbuild.Library.t) ~scope ~modules =
         }
     } in
   let exe = Path.relative dir (name ^ ".exe") in
+  let build_dir = (Super_context.context sctx).build_dir in
   { exe = exe_stanza
   ; alias_name
   ; alias_stamp = Sexp.List [Atom "ppx-runner"; Atom name]
@@ -76,7 +78,13 @@ let setup_rules test_libs ~sctx ~dir ~(lib : Jbuild.Library.t) ~scope ~modules =
        >>^ fun _ ->
        A.chdir dir
          (A.progn
-            [ A.run (Ok exe) ["inline-test-runner"; lib.name]
+            [ A.run (Ok exe)
+                [ "inline-test-runner"
+                ; lib.name
+                ; "-source-tree-root"
+                ; Path.reach build_dir ~from:dir
+                ; "-diff-cmd"; "-"
+                ]
             ; A.promote If_corrected_file_exists
                 (String_map.values modules
                  |> List.concat_map ~f:(fun m ->
