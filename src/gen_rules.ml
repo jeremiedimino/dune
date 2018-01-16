@@ -184,8 +184,8 @@ module Gen(P : Params) = struct
   let alias_module_build_sandbox = Scanf.sscanf ctx.version "%u.%u"
      (fun a b -> a, b) <= (4, 02)
 
-  let rec runner_rules ~dir ~(lib : Library.t) ~scope =
-    Option.iter (Inline_lib.rule sctx ~lib ~dir ~scope)
+  let rec runner_rules ~dir ~(lib : Library.t) ~scope ~modules =
+    Option.iter (Inline_lib.rule sctx ~lib ~dir ~scope ~modules)
       ~f:(fun { Inline_lib.exe ; alias_name ; alias_action ; alias_stamp ; last_lib } ->
         executables_rules
           ~last_lib
@@ -245,6 +245,7 @@ module Gen(P : Params) = struct
         in
         String_map.values modules);
 
+    let source_modules = modules in
     (* Preprocess before adding the alias module as it doesn't need preprocessing *)
     let modules =
       SC.PP.pp_and_lint_modules sctx ~dir ~dep_kind ~modules ~scope
@@ -435,7 +436,7 @@ module Gen(P : Params) = struct
     in
 
     (* test runners if they are present *)
-    runner_rules ~dir ~lib ~scope;
+    runner_rules ~dir ~lib ~scope ~modules:source_modules;
 
     { Merlin.
       requires = real_requires

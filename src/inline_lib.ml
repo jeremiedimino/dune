@@ -39,7 +39,7 @@ module Test_lib = struct
       []
 end
 
-let setup_rules test_libs ~sctx ~dir ~(lib : Jbuild.Library.t) ~scope =
+let setup_rules test_libs ~sctx ~dir ~(lib : Jbuild.Library.t) ~scope ~modules =
   let name = lib.name ^ "_test_runner" in
   let alias_name = "runtest" in
   let exe_stanza =
@@ -75,12 +75,26 @@ let setup_rules test_libs ~sctx ~dir ~(lib : Jbuild.Library.t) ~scope =
        Super_context.Deps.interpret sctx ~scope ~dir lib.inline_tests.deps
        >>^ fun _ ->
        A.chdir dir
-         (A.run (Ok exe) ["inline-test-runner"; lib.name]))
+         (A.progn
+            [ A.run (Ok exe) ["inline-test-runner"; lib.name]
+            ; A.promote If_corrected_file_exists
+                (String_map.values modules
+                 |> List.concat_map ~f:(fun m ->
+                   [ Module.file m ~dir Impl
+                   ; Module.file m ~dir Intf
+                   ])
+                 |> List.filter_map ~f:(fun x -> x)
+                 |> List.map ~f:(fun fn ->
+                   { Action.Promote.
+                     src = Path.extend_basename fn ~suffix:".corrected"
+                   ; dst = Path.drop_build_context fn
+                   }))
+            ]))
   ; last_lib = "ppx_inline_test.runner"
   }
 ;;
 
-let rule sctx ~(lib : Jbuild.Library.t) ~dir ~scope =
+let rule sctx ~(lib : Jbuild.Library.t) ~dir ~scope ~modules =
   let test_config =
     Jbuild.Preprocess_map.pps lib.buildable.preprocess
     |> List.rev_map ~f:Jbuild.Pp.to_string
@@ -89,4 +103,4 @@ let rule sctx ~(lib : Jbuild.Library.t) ~dir ~scope =
   if Test_lib.Set.is_empty test_config then
     None
   else
-    Some (setup_rules test_config ~sctx ~dir ~lib ~scope)
+    Some (setup_rules test_config ~sctx ~dir ~lib ~scope ~modules)

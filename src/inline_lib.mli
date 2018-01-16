@@ -1,3 +1,4 @@
+open Import
 
 type rule =
   { exe: Jbuild.Executables.t
@@ -12,4 +13,5 @@ val rule
   -> lib:Jbuild.Library.t
   -> dir:Path.t
   -> scope:Jbuild.Scope.t
+  -> modules:Module.t String_map.t
   -> rule option

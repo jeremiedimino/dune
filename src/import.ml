@@ -459,6 +459,10 @@ module Option = struct
     match x, y with
     | Some x, Some y -> Some (x, y)
     | _ -> None
+
+  let to_list = function
+    | None -> []
+    | Some x -> [x]
 end
 
 type ('a, 'b) eq = Eq : ('a, 'a) eq
