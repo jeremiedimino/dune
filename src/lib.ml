@@ -337,6 +337,10 @@ module Dep_stack = struct
     ; seen  = Int_set.empty
     }
 
+  let to_required_by t =
+    List.map t.stack ~f:(fun { Init.path; name; _ } ->
+      With_required_by.Entry.Library (path, name))
+
   let dependency_cycle t (last : Init.t) =
     assert (Int_set.mem last.unique_id t.seen);
     let rec build_loop acc stack =
@@ -580,32 +584,49 @@ and resolve_user_deps db deps ~pps ~stack =
       let pps = List.map pps ~f:Jbuild.Pp.to_string in
       deps >>= fun deps ->
       resolve_simple_deps db pps ~stack >>= fun pps ->
-      fold_closure pps ~stack ~init:deps ~f:(fun t acc ->
-        t.ppx_runtime_deps >>= fun rt_deps ->
-        Ok (List.rev_append rt_deps acc))
+      closure pps ~stack >>= fun pps ->
+      let rec loop pps acc =
+        match pps with
+        | [] -> Ok acc
+        | pp :: pps ->
+          pp.ppx_runtime_deps >>= fun rt_deps ->
+          loop pps (List.rev_append rt_deps acc)
+      in
+      loop pps deps
   in
   (deps, resolved_selects)
 
-(* Fold the transitive closure in arbitrary order *)
-and fold_closure ts ~init ~f ~stack =
-  let seen = ref Int_set.empty in
-  let rec loop ts acc ~stack =
+and closure ts ~stack =
+  let visited = ref String_map.empty in
+  let res = ref [] in
+  let rec loop t ~stack =
+    match String_map.find t.name !visited with
+    | Some (t', stack') ->
+      if t.unique_id = t'.unique_id then
+        Ok ()
+      else
+        Error
+          { With_required_by.
+            data = Conflict { lib1 = (t', Dep_stack.to_required_by stack')
+                            ; lib2 = (t , Dep_stack.to_required_by stack )
+                            }
+          ; required_by = []
+          }
+    | None ->
+      visited := String_map.add !visited ~key:t.name ~data:(t, stack);
+      Dep_stack.push stack (to_init t) >>= fun stack ->
+      t.requires >>= fun deps ->
+      iter deps ~stack >>| fun () ->
+      res := t :: !res
+  and iter ts ~stack =
     match ts with
-    | [] -> Ok acc
+    | [] -> Ok ()
     | t :: ts ->
-      if Int_set.mem t.unique_id !seen then
-        loop ts acc ~stack
-      else begin
-        seen := Int_set.add t.unique_id !seen;
-        f t acc >>= fun acc ->
-        (Dep_stack.push stack (to_init t) >>= fun stack ->
-         t.requires >>= fun deps ->
-         loop deps acc ~stack)
-        >>= fun acc ->
-        loop ts acc ~stack
-      end
+      loop t ~stack >>= fun () ->
+      iter ts ~stack
   in
-  loop ts init ~stack
+  iter ts ~stack >>| fun () ->
+  List.rev !res
 
 let to_exn res ~required_by =
   match res with
@@ -617,64 +638,7 @@ let requires_exn t ~required_by =
 let ppx_runtime_deps_exn t ~required_by =
   to_exn t.ppx_runtime_deps ~required_by
 
-(* +-----------------------------------------------------------------+
-   | Transitive closure                                              |
-   +-----------------------------------------------------------------+ *)
-
-module Closure =
-  Top_closure.Make
-    (String)
-    (struct
-      type graph = unit
-      type nonrec t = t * With_required_by.Entry.t list
-      let key (t, _) = t.name
-      let deps (t, required_by) () =
-        let required_by =
-          With_required_by.Entry.Library (t.src_dir, t.name) :: required_by
-        in
-        List.map (requires_exn t ~required_by) ~f:(fun x -> (x, required_by))
-    end)
-
-exception Conflict_found of Error.Conflict.t
-
-let check_conflicts ts =
-  match
-    List.fold_left ts ~init:String_map.empty ~f:(fun acc t ->
-      let name = (fst t).name in
-      match String_map.find name acc with
-      | None -> String_map.add acc ~key:name ~data:t
-      | Some t' -> raise_notrace (Conflict_found { lib1 = t'; lib2 = t }))
-  with
-  | (_ : _ String_map.t) ->
-    Ok (List.map ts ~f:fst)
-  | exception (Conflict_found c) ->
-    Error { With_required_by.
-            data        = Conflict c
-          ; required_by = []
-          }
-
-let closure_cache = Hashtbl.create 1024
-
-let closure ts =
-  match ts with
-  | [] -> Ok []
-  | _ ->
-    let key = List.map ts ~f:(fun p -> p.unique_id) in
-    Hashtbl.find_or_add closure_cache key ~f:(fun _ ->
-      let ts = List.map ts ~f:(fun t -> (t, [])) in
-      match Closure.top_closure () ts with
-      | Ok ts -> check_conflicts ts
-      | Error cycle ->
-        let required_by = snd (List.hd cycle) in
-        let cycle =
-          List.map cycle ~f:(fun (t, _) -> t.src_dir, t.name)
-        in
-        Error { With_required_by.
-                data = Dependency_cycle cycle
-              ; required_by
-              }
-      | exception (Error e) -> Error e)
-
+let closure ts = closure ts ~stack:Dep_stack.empty
 let closure_exn ts ~required_by = to_exn (closure ts) ~required_by
 
 module Compile = struct
