@@ -183,6 +183,8 @@ type t =
   ; requires         : t list or_error
   ; ppx_runtime_deps : t list or_error
   ; resolved_selects : Resolved_select.t list
+  ; closed_requires         : t list or_error Lazy.t
+  ; closed_ppx_runtime_deps : t list or_error Lazy.t
   }
 
 and db =
@@ -398,6 +400,7 @@ let rec make db name (info : Info.t) ~unique_id ~stack =
   in
   let requires         = map_error requires         in
   let ppx_runtime_deps = map_error ppx_runtime_deps in
+  let closed_requires  = lazy (closure requires)    in
   { loc              = info.loc
   ; name             = name
   ; unique_id        = unique_id
@@ -596,7 +599,52 @@ and resolve_user_deps db deps ~pps ~stack =
   in
   (deps, resolved_selects)
 
+
 and closure ts ~stack =
+  let add t acc seen k =
+    match String_map.find t.name seen with
+    | Some t' ->
+      if t.unique_id = t'.unique_id then
+        Ok ()
+      else
+        Error
+          { With_required_by.
+            data = Conflict { lib1 = (t', [])
+                            ; lib2 = (t , [])
+                            }
+          ; required_by = []
+          }
+    | None ->
+      Ok ()
+  in
+  let rec loop ts rest acc seen =
+    match ts with
+    | t :: ts -> begin
+        match String_map.find t.name seen with
+        | Some t' ->
+          if t.unique_id = t'.unique_id then
+            loop ts rest acc seen
+          else
+            Error
+              { With_required_by.
+                data = Conflict { lib1 = (t', [])
+                                ; lib2 = (t , [])
+                                }
+              ; required_by = []
+              }
+        | None ->
+          loop ts rest (t :: acc) (String_map.add t.name seen)
+      end
+    | [] -> begin
+        match rest with
+        | [] -> Ok (List.rev acc)
+        | t :: rest ->
+          Lazy.force t.closed_requires >>= fun ts ->
+          loop deps 
+      end
+    | t :: ts -> begin
+        match 
+    
   let visited = ref String_map.empty in
   let res = ref [] in
   let rec loop t ~stack =
