@@ -114,19 +114,21 @@ end = struct
 end
 
 type t =
-  { lang     : Lang.t
-  ; name     : Name.t
-  ; root     : Path.t
-  ; version  : string option
-  ; packages : Package.t Package.Name.Map.t
+  { lang          : Lang.t
+  ; name          : Name.t
+  ; root          : Path.t
+  ; version       : string option
+  ; packages      : Package.t Package.Name.Map.t
+  ; stanza_parser : Stanza.t Sexp.Of_sexp.t
   }
 
 let anonymous =
-  { lang     = Lang.latest
-  ; name     = Name.anonymous_root
-  ; packages = Package.Name.Map.empty
-  ; root     = Path.root
-  ; version  = None
+  { lang          = Lang.latest
+  ; name          = Name.anonymous_root
+  ; packages      = Package.Name.Map.empty
+  ; root          = Path.root
+  ; version       = None
+  ; stanza_parser = Sexp.Of_sexp.sum []
   }
 
 module Extension = struct
@@ -135,6 +137,8 @@ module Extension = struct
       type t =
         { stanzas : Stanza.t Sexp.Of_sexp.Constructor_spec.t list
         }
+
+      let make ?(stanzas=[]) () = { stanzas }
     end
 
     type parser =
@@ -153,7 +157,25 @@ module Extension = struct
     if Hashtbl.mem extensions name then
       Exn.code_error "Dune_project.Extension.register: already registered"
         [ "name", Sexp.To_sexp.string name ];
-    Hashtbl.add extensions name versions
+    Hashtbl.add extensions name (Syntax.Versioned_parser.make versions)
+
+  let parse entries =
+    match String.Map.of_list entries with
+    | Error (name, _, (loc, _, _)) ->
+      Loc.fail loc "Exntesion %S specified for the second time." name
+    | Ok _ ->
+      List.concat_map entries ~f:(fun (name, (loc, (ver_loc, ver), args)) ->
+        match Hashtbl.find extensions name with
+        | None -> Loc.fail loc "Unknown extension %S." name
+        | Some versions ->
+          let (One_version.Parser (spec, f)) =
+            Syntax.Versioned_parser.find_exn versions
+              ~loc:ver_loc ~data_version:ver
+          in
+          let info =
+            Sexp.Of_sexp.Constructor_args_spec.parse spec args f
+          in
+          info.stanzas)
 end
 
 let filename = "dune-project"
@@ -188,13 +210,18 @@ let parse ~dir packages =
      field_o "version" string >>= fun version ->
      dup_field_multi "using"
        (located string
-        @> located Syntax.Version.t
-        @> )
+        @> located Syntax.Version.t_of_sexp
+        @> cstr_loc (rest raw))
+       (fun (loc, name) ver args_loc args ->
+          (name, (loc, ver, Sexp.Ast.List (args_loc, args))))
+     >>= fun extensions ->
+     let stanzas = Extension.parse extensions in
      return { lang = Dune (0, 1)
             ; name
             ; root = dir
             ; version
             ; packages
+            ; stanza_parser = Sexp.Of_sexp.sum stanzas
             })
 
 let load_dune_project ~dir packages =
@@ -220,6 +247,7 @@ let make_jbuilder_project ~dir packages =
   ; root = dir
   ; version = None
   ; packages
+  ; stanza_parser = Sexp.Of_sexp.sum []
   }
 
 let load ~dir ~files =
