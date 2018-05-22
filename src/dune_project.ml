@@ -129,6 +129,33 @@ let anonymous =
   ; version  = None
   }
 
+module Extension = struct
+  module One_version = struct
+    module Info = struct
+      type t =
+        { stanzas : Stanza.t Sexp.Of_sexp.Constructor_spec.t list
+        }
+    end
+
+    type parser =
+        Parser : ('a, Info.t) Sexp.Of_sexp.Constructor_args_spec.t * 'a
+          -> parser
+
+    type t = Syntax.Version.t * parser
+
+    let make ver args_spec f =
+      (ver, Parser (args_spec, f))
+  end
+
+  let extensions = Hashtbl.create 32
+
+  let register name versions =
+    if Hashtbl.mem extensions name then
+      Exn.code_error "Dune_project.Extension.register: already registered"
+        [ "name", Sexp.To_sexp.string name ];
+    Hashtbl.add extensions name versions
+end
+
 let filename = "dune-project"
 
 let default_name ~dir ~packages =
@@ -159,6 +186,10 @@ let parse ~dir packages =
   record
     (name ~dir ~packages >>= fun name ->
      field_o "version" string >>= fun version ->
+     dup_field_multi "using"
+       (located string
+        @> located Syntax.Version.t
+        @> )
      return { lang = Dune (0, 1)
             ; name
             ; root = dir

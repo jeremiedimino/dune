@@ -29,12 +29,44 @@ module Name : sig
   val decode : string -> t
 end
 
+module Extension : sig
+  module One_version : sig
+    type t
+
+    module Info : sig
+      type t
+
+      val make
+        :  ?stanzas:Stanza.t Sexp.Of_sexp.Constructor_spec.t list
+        -> unit
+        -> t
+    end
+
+    (** [make version args_spec f] defines one version of an
+        extension. Users will enable this extension by writing:
+
+        {[ (using <name> <version> <args>) ]}
+
+        in their [dune-project] file. [args_spec] is used to describe
+        what [<args>] might be.
+    *)
+    val make
+      :  Syntax.Version.t
+      -> ('a, Info.t) Sexp.Of_sexp.Constructor_args_spec.t
+      -> 'a
+      -> t
+  end
+
+  val register : string -> One_version.t list -> unit
+end
+
 type t =
-  { lang     : Lang.t
-  ; name     : Name.t
-  ; root     : Path.t
-  ; version  : string option
-  ; packages : Package.t Package.Name.Map.t
+  { lang          : Lang.t
+  ; name          : Name.t
+  ; root          : Path.t
+  ; version       : string option
+  ; packages      : Package.t Package.Name.Map.t
+  ; stanza_parser : Stanza.t Sexp.Of_sexp.t
   }
 
 (** Load a project description from the following directory. [files]
