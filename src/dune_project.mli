@@ -6,6 +6,31 @@ module Lang : sig
   type t =
     | Jbuilder
     | Dune of Syntax.Version.t
+
+  module One_version : sig
+    type t
+
+    module Info : sig
+      type t
+
+      val make
+        :  ?stanzas:Stanza.t Sexp.Of_sexp.Constructor_spec.t list
+        -> unit
+        -> t
+    end
+
+    (** [make version args_spec f] defines one version of a
+        language. Users will select this language by writing:
+
+        {[ (lang <name> <version> <args>) ]}
+
+        in their [dune-project] file. [args_spec] is used to describe
+        what [<args>] might be.
+    *)
+    val make : Syntax.Version.t -> Info.t -> t
+  end
+
+  val register : t -> string -> One_version.t list -> unit
 end
 
 module Name : sig
@@ -29,7 +54,18 @@ module Name : sig
   val decode : string -> t
 end
 
+type t = private
+  { lang                  : Lang.t
+  ; name                  : Name.t
+  ; root                  : Path.t
+  ; version               : string option
+  ; packages              : Package.t Package.Name.Map.t
+  ; mutable stanza_parser : Stanza.t Sexp.Of_sexp.t
+  }
+
 module Extension : sig
+  type project = t
+
   module One_version : sig
     type t
 
@@ -53,21 +89,12 @@ module Extension : sig
     val make
       :  Syntax.Version.t
       -> ('a, Info.t) Sexp.Of_sexp.Constructor_args_spec.t
-      -> 'a
+      -> (project -> 'a)
       -> t
   end
 
   val register : string -> One_version.t list -> unit
-end
-
-type t =
-  { lang          : Lang.t
-  ; name          : Name.t
-  ; root          : Path.t
-  ; version       : string option
-  ; packages      : Package.t Package.Name.Map.t
-  ; stanza_parser : Stanza.t Sexp.Of_sexp.t
-  }
+end with type project := t
 
 (** Load a project description from the following directory. [files]
     is the set of files in this directory. *)
@@ -78,4 +105,4 @@ val filename : string
 
 (** Represent the scope at the root of the workspace when the root of
     the workspace contains no [dune-project] or [<package>.opam] files. *)
-val anonymous : t
+val anonymous : t Lazy.t

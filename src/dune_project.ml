@@ -6,7 +6,52 @@ module Lang = struct
     | Jbuilder
     | Dune of Syntax.Version.t
 
-  let latest = Dune (0, 1)
+  module One_version = struct
+    module Info = struct
+      type t =
+        { stanzas : Stanza.t Sexp.Of_sexp.Constructor_spec.t list
+        }
+
+      let make ?(stanzas=[]) () = { stanzas }
+    end
+
+    type t = Syntax.Version.t * Info.t
+
+    let make ver info = (ver, info)
+  end
+
+  let langs
+    : (string, t * One_version.Info.t Syntax.Versioned_parser.t) Hashtbl.t
+    = Hashtbl.create 32
+
+  let register t name versions =
+    if Hashtbl.mem langs name then
+      Exn.code_error "Dune_project.Lang.register: already registered"
+        [ "name", Sexp.To_sexp.string name ];
+    Hashtbl.add langs name (t, Syntax.Versioned_parser.make versions)
+
+  let parse first_line =
+    let { Dune_lexer.
+          lang = (name_loc, name)
+        ; version = (ver_loc, ver)
+        } = first_line
+    in
+    let ver = Syntax.Version.t (Atom (ver_loc, Sexp.Atom.of_string ver)) in
+    match Hashtbl.find langs name with
+    | None ->
+      Loc.fail name_loc "Unknown language %S.%s" name
+        (hint name (Hashtbl.keys langs))
+    | Some (t, versions) ->
+      let info =
+        Syntax.Versioned_parser.find_exn versions
+          ~loc:ver_loc ~data_version:ver
+      in
+      (t, info.stanzas)
+
+  let latest name =
+    let t, versions = Option.value_exn (Hashtbl.find langs name) in
+    let _, info = Syntax.Versioned_parser.last versions in
+    (t, info.stanzas)
 end
 
 module Name : sig
@@ -114,22 +159,23 @@ end = struct
 end
 
 type t =
-  { lang          : Lang.t
-  ; name          : Name.t
-  ; root          : Path.t
-  ; version       : string option
-  ; packages      : Package.t Package.Name.Map.t
-  ; stanza_parser : Stanza.t Sexp.Of_sexp.t
+  { lang                  : Lang.t
+  ; name                  : Name.t
+  ; root                  : Path.t
+  ; version               : string option
+  ; packages              : Package.t Package.Name.Map.t
+  ; mutable stanza_parser : Stanza.t Sexp.Of_sexp.t
   }
 
-let anonymous =
-  { lang          = Lang.latest
+let anonymous = lazy(
+  let lang, lang_stanzas = Lang.latest "dune" in
+  { lang
   ; name          = Name.anonymous_root
   ; packages      = Package.Name.Map.empty
   ; root          = Path.root
   ; version       = None
-  ; stanza_parser = Sexp.Of_sexp.sum []
-  }
+  ; stanza_parser = Sexp.Of_sexp.sum lang_stanzas
+  })
 
 module Extension = struct
   module One_version = struct
@@ -142,7 +188,7 @@ module Extension = struct
     end
 
     type parser =
-        Parser : ('a, Info.t) Sexp.Of_sexp.Constructor_args_spec.t * 'a
+        Parser : ('a, Info.t) Sexp.Of_sexp.Constructor_args_spec.t * (t -> 'a)
           -> parser
 
     type t = Syntax.Version.t * parser
@@ -159,21 +205,23 @@ module Extension = struct
         [ "name", Sexp.To_sexp.string name ];
     Hashtbl.add extensions name (Syntax.Versioned_parser.make versions)
 
-  let parse entries =
+  let parse project entries =
     match String.Map.of_list entries with
     | Error (name, _, (loc, _, _)) ->
       Loc.fail loc "Exntesion %S specified for the second time." name
     | Ok _ ->
       List.concat_map entries ~f:(fun (name, (loc, (ver_loc, ver), args)) ->
         match Hashtbl.find extensions name with
-        | None -> Loc.fail loc "Unknown extension %S." name
+        | None ->
+          Loc.fail loc "Unknown extension %S.%s" name
+            (hint name (Hashtbl.keys extensions))
         | Some versions ->
           let (One_version.Parser (spec, f)) =
             Syntax.Versioned_parser.find_exn versions
               ~loc:ver_loc ~data_version:ver
           in
           let info =
-            Sexp.Of_sexp.Constructor_args_spec.parse spec args f
+            Sexp.Of_sexp.Constructor_args_spec.parse spec args (f project)
           in
           info.stanzas)
 end
@@ -202,52 +250,51 @@ let default_name ~dir ~packages =
 let name ~dir ~packages =
   field_o "name" Name.named_of_sexp >>= function
   | Some x -> return x
-  | None -> return (default_name ~dir ~packages)
+  | None   -> return (default_name ~dir ~packages)
 
-let parse ~dir packages =
+let parse ~dir ~lang ~lang_stanzas ~packages =
   record
     (name ~dir ~packages >>= fun name ->
      field_o "version" string >>= fun version ->
      dup_field_multi "using"
        (located string
-        @> located Syntax.Version.t_of_sexp
+        @> located Syntax.Version.t
         @> cstr_loc (rest raw))
        (fun (loc, name) ver args_loc args ->
           (name, (loc, ver, Sexp.Ast.List (args_loc, args))))
      >>= fun extensions ->
-     let stanzas = Extension.parse extensions in
-     return { lang = Dune (0, 1)
-            ; name
-            ; root = dir
-            ; version
-            ; packages
-            ; stanza_parser = Sexp.Of_sexp.sum stanzas
-            })
+     let t =
+       { lang
+       ; name
+       ; root = dir
+       ; version
+       ; packages
+       ; stanza_parser = (fun _ -> assert false)
+       }
+     in
+     let extenstions_stanzas = Extension.parse t extensions in
+     t.stanza_parser <- Sexp.Of_sexp.sum (lang_stanzas @ extenstions_stanzas);
+     return t)
 
 let load_dune_project ~dir packages =
   let fname = Path.relative dir filename in
   Io.with_lexbuf_from_file fname ~f:(fun lb ->
-    let { Dune_lexer. lang; version } = Dune_lexer.first_line lb in
-    (match lang with
-     | _, "dune" -> ()
-     | loc, s ->
-       Loc.fail loc "%s is not a supported langauge. \
-                     Only the dune language is supported." s);
-    (match version with
-     | _, "0.1" -> ()
-     | loc, s ->
-       Loc.fail loc "Unsupported version of the dune language. \
-                     The only supported version is 0.1." s);
+    let lang, lang_stanzas = Lang.parse (Dune_lexer.first_line lb) in
     let sexp = Sexp.Parser.parse lb ~mode:Many_as_one in
-    parse ~dir packages sexp)
+    parse ~dir ~lang ~lang_stanzas ~packages sexp)
 
 let make_jbuilder_project ~dir packages =
-  { lang = Jbuilder
+  let lang, lang_stanzas =
+    Lang.parse { lang    = (Loc.none, "jbuilder")
+               ; version = (Loc.none, "0.1")
+               }
+  in
+  { lang
   ; name = default_name ~dir ~packages
   ; root = dir
   ; version = None
   ; packages
-  ; stanza_parser = Sexp.Of_sexp.sum []
+  ; stanza_parser = Sexp.Of_sexp.sum lang_stanzas
   }
 
 let load ~dir ~files =
