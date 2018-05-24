@@ -54,7 +54,7 @@ module Name : sig
   val decode : string -> t
 end
 
-type t = private
+type t =
   { lang                  : Lang.t
   ; name                  : Name.t
   ; root                  : Path.t

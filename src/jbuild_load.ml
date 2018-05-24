@@ -241,7 +241,7 @@ let load ?extra_ignored_subtrees ?(ignore_promoted_rules=false) () =
     if Path.Map.mem projects Path.root then
       projects
     else
-      Path.Map.add projects Path.root Dune_project.anonymous
+      Path.Map.add projects Path.root (Lazy.force Dune_project.anonymous)
   in
   let rec walk dir jbuilds project =
     if File_tree.Dir.ignored dir then
@@ -263,7 +263,10 @@ let load ?extra_ignored_subtrees ?(ignore_promoted_rules=false) () =
         ~f:(fun dir jbuilds -> walk dir jbuilds project)
     end
   in
-  let jbuilds = walk (File_tree.root ftree) [] Dune_project.anonymous in
+  let jbuilds =
+    let project = Option.value_exn (Path.Map.find projects Path.root) in
+    walk (File_tree.root ftree) [] project
+  in
   { file_tree = ftree
   ; jbuilds = { jbuilds; ignore_promoted_rules }
   ; packages
