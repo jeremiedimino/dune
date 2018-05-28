@@ -91,21 +91,19 @@ let gen_code oc (t : t) =
   pr "";
   let pr_table ~per_line suffix tbl ids =
     pr "let transitions%s = function" suffix;
-    let len = Array.length tbl in
-    let lines = len / per_line in
-    assert (per_line * lines = len);
-    for l = 0 to lines - 1 do
-      Out_channel.fprintf oc " ";
-      for col = 0 to per_line - 1 do
-        let i = l * per_line + col in
-        Out_channel.fprintf oc " | %02d -> tr%s_%02d" i suffix
-          (Hashtbl.find_exn ids tbl.(i))
-      done;
-      Out_channel.fprintf oc "\n"
+    for i = 0 to Array.length tbl - 1 do
+      if i % per_line = 0 then begin
+        if i > 0 then Out_channel.fprintf oc "\n";
+        Out_channel.fprintf oc " "
+      end;
+      Out_channel.fprintf oc " | %02d -> tr%s_%02d" i suffix
+        (Hashtbl.find_exn ids tbl.(i))
     done;
     pr "";
+    pr "  | _ -> assert false"
   in
-  pr_table ""     t.transitions     named_transitions ~per_line:4;
+  pr_table ""     t.transitions     named_transitions     ~per_line:4;
+  pr "";
   pr_table "_eoi" t.transitions_eoi named_transitions_eoi ~per_line:4
 
 let () = gen_code Caml.stdout table

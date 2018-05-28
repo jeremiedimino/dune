@@ -326,16 +326,12 @@ module Parser = struct
 
   let feed : type a. a A.action = fun state char stack ->
     let idx = (A.automaton_state state lsl 8) lor (Char.code char) in
-    (* We need an Obj.magic as the type of the array can't be generalized.
-       This problem will go away when we get immutable arrays. *)
-    (Obj.magic (Table.transitions.(idx) : Obj.t A.action) : a A.action) state char stack
+    Table.transitions idx state char stack
   [@@inline always]
 
   let feed_eoi : type a. a t -> Stack.t -> a = fun state stack ->
     let stack =
-      (Obj.magic (Table.transitions_eoi.(A.automaton_state state)
-                  : Obj.t A.epsilon_action)
-       : a A.epsilon_action) state stack
+      Table.transitions_eoi (A.automaton_state state) state stack
     in
     A.set_error_state state;
     match A.mode state with
