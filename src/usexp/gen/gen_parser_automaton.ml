@@ -39,7 +39,7 @@ let gen_code oc (t : t) =
   pr "";
   let ordered_ids tbl =
     Hashtbl.fold tbl ~init:[] ~f:(fun ~key:x ~data:id acc -> (id, x) :: acc)
-    |> List.sort ~cmp:(fun (id1, _) (id2, _) -> compare id1 id2)
+    |> List.sort ~compare:(fun (id1, _) (id2, _) -> compare id1 id2)
   in
   List.iter (ordered_ids named_transitions)
     ~f:(fun (id, tr) ->
@@ -89,24 +89,23 @@ let gen_code oc (t : t) =
       List.iter eps_actions ~f:(pr "  let stack = %s state stack in");
       pr "  eps_eoi_check state stack");
   pr "";
-  let pr_table ?(per_line=1) suffix tbl ids =
-    pr "let transitions%s =" suffix;
+  let pr_table ~per_line suffix tbl ids =
+    pr "let transitions%s = function" suffix;
     let len = Array.length tbl in
     let lines = len / per_line in
     assert (per_line * lines = len);
     for l = 0 to lines - 1 do
-      Out_channel.fprintf oc (if l = 0 then "  [|" else "   ;");
+      Out_channel.fprintf oc " ";
       for col = 0 to per_line - 1 do
-        if col > 0 then Out_channel.fprintf oc ";";
         let i = l * per_line + col in
-        Out_channel.fprintf oc " tr%s_%02d" suffix (Hashtbl.find_exn ids tbl.(i))
+        Out_channel.fprintf oc " | %02d -> tr%s_%02d" i suffix
+          (Hashtbl.find_exn ids tbl.(i))
       done;
       Out_channel.fprintf oc "\n"
     done;
-    pr "  |]";
     pr "";
   in
-  pr_table ""     t.transitions     named_transitions ~per_line:8;
-  pr_table "_eoi" t.transitions_eoi named_transitions_eoi
+  pr_table ""     t.transitions     named_transitions ~per_line:4;
+  pr_table "_eoi" t.transitions_eoi named_transitions_eoi ~per_line:4
 
 let () = gen_code Caml.stdout table
