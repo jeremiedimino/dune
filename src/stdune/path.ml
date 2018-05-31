@@ -31,8 +31,34 @@ let explode_path =
       | "." :: xs -> xs
       | xs -> xs
 
-module External : sig
+module type S = sig
   type t
+  val compare : t -> t -> Ordering.t
+  val to_string : t -> string
+  val make : string -> t
+  module Set : Set.S with type elt = t
+end
+
+module T : sig
+  include S
+
+  module Subset() : S with type t = private t
+end = struct
+  module Subset() = struct
+    type t = string
+    let compare = String.compare
+    let to_string t = t
+    let make t = t
+    module Set = String.Set
+  end
+
+  include Subset()
+end
+
+type t = T.t
+
+module External : sig
+  type t = private T.t
 
   val compare : t -> t -> Ordering.t
   val compare_val : t -> t -> Ordering.t
@@ -48,10 +74,7 @@ module External : sig
   val cwd : unit -> t
   val extend_basename : t -> suffix:string -> t
 end = struct
-  include Interned.No_interning(struct
-      let initial_size = 512
-      let resize_policy = Interned.Greedy
-    end)()
+  include T.Subset()
 
   let compare_val x y = String.compare (to_string x) (to_string y)
 
@@ -154,10 +177,7 @@ module Local : sig
 end = struct
   (* either "." for root, either a '/' separated list of components
      other that ".", ".."  and not containing '/'. *)
-  include Interned.No_interning(struct
-      let initial_size = 512
-      let resize_policy = Interned.Greedy
-    end)()
+  include T.Subset()
 
   let compare_val x y = String.compare (to_string x) (to_string y)
 
@@ -411,7 +431,7 @@ module Kind = struct
            (Local.to_string l))
 
   let to_string = function
-    | Local t -> Local.to_string t
+    | Local    t -> Local.to_string t
     | External t -> External.to_string t
 
   let sexp_of_t t = Sexp.atom_or_quoted_string (to_string t)
@@ -427,20 +447,14 @@ module Kind = struct
     assert (of_string ""  = root);
     assert (of_string "." = root)
 
-  let _relative ?error_loc t fn =
-    match t with
-    | Local t -> Local (Local.relative ?error_loc t fn)
-    | External t -> External (External.relative t fn)
-
   let mkdir_p = function
-    | Local t -> Local.mkdir_p t
+    | Local    t -> Local.mkdir_p t
     | External t -> External.mkdir_p t
 
   let append_local x y =
     match x with
-    | Local x -> Local (Local.append x y)
+    | Local    x -> Local (Local.append x y)
     | External x -> External (External.relative x (Local.to_string y))
-
 end
 
 let (build_dir_kind, build_dir_prefix, set_build_dir) =
@@ -482,37 +496,32 @@ let (build_dir_kind, build_dir_prefix, set_build_dir) =
   in
   (build_dir, build_dir_prefix, set_build_dir)
 
-module T : sig
-  type t = private
-    | External of External.t
-    | In_source_tree of Local.t
-    | In_build_dir of Local.t
-
-  val compare : t -> t -> Ordering.t
-
-  val in_build_dir : Local.t -> t
-  val in_source_tree : Local.t -> t
-  val external_ : External.t -> t
-end = struct
+module Class : sig
   type t =
-    | External of External.t
-    | In_source_tree of Local.t
-    | In_build_dir of Local.t
-
-  let compare x y =
-    match x, y with
-    | External x      , External y       -> External.compare x y
-    | External _      , _                -> Lt
-    | _               , External _       -> Gt
-    | In_source_tree x, In_source_tree y -> Local.compare x y
-    | In_source_tree _, _                -> Lt
-    | _               , In_source_tree _ -> Gt
-    | In_build_dir x  , In_build_dir y   -> Local.compare x y
-
-  let in_build_dir s = In_build_dir s
-  let in_source_tree s = In_source_tree s
-  let external_ e = External e
+    | External
+    | Local
+    | In_external_source_tree
 end
+
+let class_of : string -> Class.External =
+  if Sys.win32 then
+    fun t ->
+      let s = T.to_string t in
+      match s.[0] with
+      | '\000' -> In_external_source_tree
+      | '/' | '\\' -> External
+      | _ ->
+        if String.length s >= 2 && s.[1] = ':' then
+          External
+      else
+        Local
+  else
+    fun t ->
+      let s = T.to_string t in
+      match s.[0] with
+      | '\000' -> In_external_source_tree
+      | '/'    -> External
+      | _      -> Local
 
 include T
 
