@@ -166,7 +166,7 @@ end
       let stanzas =
         Io.Sexp.load generated_jbuild ~mode:Many
           ~lexer:(File_tree.Dune_file.Kind.lexer kind)
-        |> Stanzas.parse project ~file:generated_jbuild
+        |> Stanzas.parse project ~file:generated_jbuild ~kind
         |> filter_stanzas ~ignore_promoted_rules
       in
       Fiber.return
@@ -192,7 +192,7 @@ let interpret ~dir ~project ~ignore_promoted_rules
   match dune_file.contents with
   | Plain p ->
     let stanzas =
-      Stanzas.parse project p.sexps ~file:p.path
+      Stanzas.parse project p.sexps ~file:p.path ~kind:dune_file.kind
       |> filter_stanzas ~ignore_promoted_rules
     in
     let jbuild =

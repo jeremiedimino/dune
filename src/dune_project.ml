@@ -110,7 +110,7 @@ type t =
   ; root                  : Path.t
   ; version               : string option
   ; packages              : Package.t Package.Name.Map.t
-  ; mutable stanza_parser : Stanza.t Sexp.Of_sexp.t
+  ; mutable stanza_parser : Stanza.t list Sexp.Of_sexp.t
   }
 
 type project = t
@@ -119,7 +119,8 @@ module Lang = struct
   module One_version = struct
     module Info = struct
       type t =
-        { stanzas : project -> Stanza.t Sexp.Of_sexp.Constructor_spec.t list
+        { stanzas : project
+            -> Stanza.t list Sexp.Of_sexp.Constructor_spec.t list
         }
 
       let make ?(stanzas=fun _ -> []) () = { stanzas }
@@ -168,7 +169,7 @@ module Extension = struct
   module One_version = struct
     module Info = struct
       type t =
-        { stanzas : Stanza.t Sexp.Of_sexp.Constructor_spec.t list
+        { stanzas : Stanza.t list Sexp.Of_sexp.Constructor_spec.t list
         }
 
       let make ?(stanzas=[]) () = { stanzas }

@@ -28,7 +28,7 @@ type t =
   ; root                  : Path.t
   ; version               : string option
   ; packages              : Package.t Package.Name.Map.t
-  ; mutable stanza_parser : Stanza.t Sexp.Of_sexp.t
+  ; mutable stanza_parser : Stanza.t list Sexp.Of_sexp.t
   }
 
 module Lang : sig
@@ -40,7 +40,8 @@ module Lang : sig
       type t
 
       val make
-        :  ?stanzas:(project -> Stanza.t Sexp.Of_sexp.Constructor_spec.t list)
+        :  ?stanzas:(project
+                     -> Stanza.t list Sexp.Of_sexp.Constructor_spec.t list)
         -> unit
         -> t
     end
@@ -69,7 +70,7 @@ module Extension : sig
       type t
 
       val make
-        :  ?stanzas:Stanza.t Sexp.Of_sexp.Constructor_spec.t list
+        :  ?stanzas:Stanza.t list Sexp.Of_sexp.Constructor_spec.t list
         -> unit
         -> t
     end
