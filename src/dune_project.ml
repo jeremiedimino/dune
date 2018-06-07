@@ -1,59 +1,6 @@
 open Import
 open Sexp.Of_sexp
 
-module Lang = struct
-  type t =
-    | Jbuilder
-    | Dune of Syntax.Version.t
-
-  module One_version = struct
-    module Info = struct
-      type t =
-        { stanzas : Stanza.t Sexp.Of_sexp.Constructor_spec.t list
-        }
-
-      let make ?(stanzas=[]) () = { stanzas }
-    end
-
-    type t = Syntax.Version.t * Info.t
-
-    let make ver info = (ver, info)
-  end
-
-  let langs
-    : (string, t * One_version.Info.t Syntax.Versioned_parser.t) Hashtbl.t
-    = Hashtbl.create 32
-
-  let register t name versions =
-    if Hashtbl.mem langs name then
-      Exn.code_error "Dune_project.Lang.register: already registered"
-        [ "name", Sexp.To_sexp.string name ];
-    Hashtbl.add langs name (t, Syntax.Versioned_parser.make versions)
-
-  let parse first_line =
-    let { Dune_lexer.
-          lang = (name_loc, name)
-        ; version = (ver_loc, ver)
-        } = first_line
-    in
-    let ver = Syntax.Version.t (Atom (ver_loc, Sexp.Atom.of_string ver)) in
-    match Hashtbl.find langs name with
-    | None ->
-      Loc.fail name_loc "Unknown language %S.%s" name
-        (hint name (Hashtbl.keys langs))
-    | Some (t, versions) ->
-      let info =
-        Syntax.Versioned_parser.find_exn versions
-          ~loc:ver_loc ~data_version:ver
-      in
-      (t, info.stanzas)
-
-  let latest name =
-    let t, versions = Option.value_exn (Hashtbl.find langs name) in
-    let _, info = Syntax.Versioned_parser.last versions in
-    (t, info.stanzas)
-end
-
 module Name : sig
   type t = private
     | Named     of string
@@ -159,23 +106,63 @@ end = struct
 end
 
 type t =
-  { lang                  : Lang.t
-  ; name                  : Name.t
+  { name                  : Name.t
   ; root                  : Path.t
   ; version               : string option
   ; packages              : Package.t Package.Name.Map.t
   ; mutable stanza_parser : Stanza.t Sexp.Of_sexp.t
   }
 
-let anonymous = lazy(
-  let lang, lang_stanzas = Lang.latest "dune" in
-  { lang
-  ; name          = Name.anonymous_root
-  ; packages      = Package.Name.Map.empty
-  ; root          = Path.root
-  ; version       = None
-  ; stanza_parser = Sexp.Of_sexp.sum lang_stanzas
-  })
+type project = t
+
+module Lang = struct
+  module One_version = struct
+    module Info = struct
+      type t =
+        { stanzas : project -> Stanza.t Sexp.Of_sexp.Constructor_spec.t list
+        }
+
+      let make ?(stanzas=fun _ -> []) () = { stanzas }
+    end
+
+    type t = Syntax.Version.t * Info.t
+
+    let make ver info = (ver, info)
+  end
+
+  let langs
+    : (string, One_version.Info.t Syntax.Versioned_parser.t) Hashtbl.t
+    = Hashtbl.create 32
+
+  let register name versions =
+    if Hashtbl.mem langs name then
+      Exn.code_error "Dune_project.Lang.register: already registered"
+        [ "name", Sexp.To_sexp.string name ];
+    Hashtbl.add langs name (Syntax.Versioned_parser.make versions)
+
+  let parse first_line =
+    let { Dune_lexer.
+          lang = (name_loc, name)
+        ; version = (ver_loc, ver)
+        } = first_line
+    in
+    let ver = Syntax.Version.t (Atom (ver_loc, Sexp.Atom.of_string ver)) in
+    match Hashtbl.find langs name with
+    | None ->
+      Loc.fail name_loc "Unknown language %S.%s" name
+        (hint name (Hashtbl.keys langs))
+    | Some versions ->
+      let info =
+        Syntax.Versioned_parser.find_exn versions
+          ~loc:ver_loc ~data_version:ver
+      in
+      info.stanzas
+
+  let latest name =
+    let versions = Option.value_exn (Hashtbl.find langs name) in
+    let _, info = Syntax.Versioned_parser.last versions in
+    info.stanzas
+end
 
 module Extension = struct
   module One_version = struct
@@ -228,6 +215,18 @@ end
 
 let filename = "dune-project"
 
+let anonymous = lazy(
+  let t =
+    { name          = Name.anonymous_root
+    ; packages      = Package.Name.Map.empty
+    ; root          = Path.root
+    ; version       = None
+    ; stanza_parser = (fun _ -> assert false)
+    }
+  in
+  t.stanza_parser <- Sexp.Of_sexp.sum (Lang.latest "dune" t);
+  t)
+
 let default_name ~dir ~packages =
   match Package.Name.Map.choose packages with
   | None -> Option.value_exn (Name.anonymous dir)
@@ -252,7 +251,7 @@ let name ~dir ~packages =
   | Some x -> return x
   | None   -> return (default_name ~dir ~packages)
 
-let parse ~dir ~lang ~lang_stanzas ~packages =
+let parse ~dir ~lang_stanzas ~packages =
   record
     (name ~dir ~packages >>= fun name ->
      field_o "version" string >>= fun version ->
@@ -264,8 +263,7 @@ let parse ~dir ~lang ~lang_stanzas ~packages =
           (name, (loc, ver, Sexp.Ast.List (args_loc, args))))
      >>= fun extensions ->
      let t =
-       { lang
-       ; name
+       { name
        ; root = dir
        ; version
        ; packages
@@ -273,28 +271,22 @@ let parse ~dir ~lang ~lang_stanzas ~packages =
        }
      in
      let extenstions_stanzas = Extension.parse t extensions in
-     t.stanza_parser <- Sexp.Of_sexp.sum (lang_stanzas @ extenstions_stanzas);
+     t.stanza_parser <- Sexp.Of_sexp.sum (lang_stanzas t @ extenstions_stanzas);
      return t)
 
 let load_dune_project ~dir packages =
   let fname = Path.relative dir filename in
   Io.with_lexbuf_from_file fname ~f:(fun lb ->
-    let lang, lang_stanzas = Lang.parse (Dune_lexer.first_line lb) in
+    let lang_stanzas = Lang.parse (Dune_lexer.first_line lb) in
     let sexp = Sexp.Parser.parse lb ~mode:Many_as_one in
-    parse ~dir ~lang ~lang_stanzas ~packages sexp)
+    parse ~dir ~lang_stanzas ~packages sexp)
 
 let make_jbuilder_project ~dir packages =
-  let lang, lang_stanzas =
-    Lang.parse { lang    = (Loc.none, "jbuilder")
-               ; version = (Loc.none, "0.1")
-               }
-  in
-  { lang
-  ; name = default_name ~dir ~packages
+  { name = default_name ~dir ~packages
   ; root = dir
   ; version = None
   ; packages
-  ; stanza_parser = Sexp.Of_sexp.sum lang_stanzas
+  ; stanza_parser = Sexp.Of_sexp.sum []
   }
 
 let load ~dir ~files =

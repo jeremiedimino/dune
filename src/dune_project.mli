@@ -2,37 +2,6 @@
 
 open Import
 
-module Lang : sig
-  type t =
-    | Jbuilder
-    | Dune of Syntax.Version.t
-
-  module One_version : sig
-    type t
-
-    module Info : sig
-      type t
-
-      val make
-        :  ?stanzas:Stanza.t Sexp.Of_sexp.Constructor_spec.t list
-        -> unit
-        -> t
-    end
-
-    (** [make version args_spec f] defines one version of a
-        language. Users will select this language by writing:
-
-        {[ (lang <name> <version> <args>) ]}
-
-        in their [dune-project] file. [args_spec] is used to describe
-        what [<args>] might be.
-    *)
-    val make : Syntax.Version.t -> Info.t -> t
-  end
-
-  val register : t -> string -> One_version.t list -> unit
-end
-
 module Name : sig
   (** Invariants:
       - Named     s -> s <> "" and s does not contain '.' or '/'
@@ -55,13 +24,40 @@ module Name : sig
 end
 
 type t =
-  { lang                  : Lang.t
-  ; name                  : Name.t
+  { name                  : Name.t
   ; root                  : Path.t
   ; version               : string option
   ; packages              : Package.t Package.Name.Map.t
   ; mutable stanza_parser : Stanza.t Sexp.Of_sexp.t
   }
+
+module Lang : sig
+  type project = t
+  module One_version : sig
+    type t
+
+    module Info : sig
+      type t
+
+      val make
+        :  ?stanzas:(project -> Stanza.t Sexp.Of_sexp.Constructor_spec.t list)
+        -> unit
+        -> t
+    end
+
+    (** [make version args_spec f] defines one version of a
+        language. Users will select this language by writing:
+
+        {[ (lang <name> <version> <args>) ]}
+
+        in their [dune-project] file. [args_spec] is used to describe
+        what [<args>] might be.
+    *)
+    val make : Syntax.Version.t -> Info.t -> t
+  end
+
+  val register : string -> One_version.t list -> unit
+end with type project := t
 
 module Extension : sig
   type project = t
