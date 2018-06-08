@@ -116,24 +116,11 @@ type t =
 type project = t
 
 module Lang = struct
-  module One_version = struct
-    module Info = struct
-      type t =
-        { stanzas : project
-            -> Stanza.t list Sexp.Of_sexp.Constructor_spec.t list
-        }
+  type t = Syntax.Version.t * (project -> Stanza.Parser.t list)
 
-      let make ?(stanzas=fun _ -> []) () = { stanzas }
-    end
+  let make ver f = (ver, f)
 
-    type t = Syntax.Version.t * Info.t
-
-    let make ver info = (ver, info)
-  end
-
-  let langs
-    : (string, One_version.Info.t Syntax.Versioned_parser.t) Hashtbl.t
-    = Hashtbl.create 32
+  let langs = Hashtbl.create 32
 
   let register name versions =
     if Hashtbl.mem langs name then
@@ -153,37 +140,23 @@ module Lang = struct
       Loc.fail name_loc "Unknown language %S.%s" name
         (hint name (Hashtbl.keys langs))
     | Some versions ->
-      let info =
-        Syntax.Versioned_parser.find_exn versions
-          ~loc:ver_loc ~data_version:ver
-      in
-      info.stanzas
+      Syntax.Versioned_parser.find_exn versions
+        ~loc:ver_loc ~data_version:ver
 
   let latest name =
     let versions = Option.value_exn (Hashtbl.find langs name) in
-    let _, info = Syntax.Versioned_parser.last versions in
-    info.stanzas
+    snd (Syntax.Versioned_parser.last versions)
 end
 
 module Extension = struct
-  module One_version = struct
-    module Info = struct
-      type t =
-        { stanzas : Stanza.t list Sexp.Of_sexp.Constructor_spec.t list
-        }
+  type maker =
+      T : ('a, Stanza.Parser.t list) Sexp.Of_sexp.Constructor_args_spec.t *
+          (project -> 'a)
+      -> maker
 
-      let make ?(stanzas=[]) () = { stanzas }
-    end
+  type t = Syntax.Version.t * maker
 
-    type parser =
-        Parser : ('a, Info.t) Sexp.Of_sexp.Constructor_args_spec.t * (t -> 'a)
-          -> parser
-
-    type t = Syntax.Version.t * parser
-
-    let make ver args_spec f =
-      (ver, Parser (args_spec, f))
-  end
+  let make ver args_spec f = (ver, T (args_spec, f))
 
   let extensions = Hashtbl.create 32
 
@@ -204,14 +177,11 @@ module Extension = struct
           Loc.fail loc "Unknown extension %S.%s" name
             (hint name (Hashtbl.keys extensions))
         | Some versions ->
-          let (One_version.Parser (spec, f)) =
+          let (T (spec, f)) =
             Syntax.Versioned_parser.find_exn versions
               ~loc:ver_loc ~data_version:ver
           in
-          let info =
-            Sexp.Of_sexp.Constructor_args_spec.parse spec args (f project)
-          in
-          info.stanzas)
+          Sexp.Of_sexp.Constructor_args_spec.parse spec args (f project))
 end
 
 let filename = "dune-project"

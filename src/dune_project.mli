@@ -33,64 +33,48 @@ type t =
 
 module Lang : sig
   type project = t
-  module One_version : sig
-    type t
 
-    module Info : sig
-      type t
+  (** One version of a language *)
+  type t
 
-      val make
-        :  ?stanzas:(project
-                     -> Stanza.t list Sexp.Of_sexp.Constructor_spec.t list)
-        -> unit
-        -> t
-    end
+  (** [make version stanzas_parser] defines one version of a
+      language. Users will select this language by writing:
 
-    (** [make version args_spec f] defines one version of a
-        language. Users will select this language by writing:
+      {[ (lang <name> <version>) ]}
 
-        {[ (lang <name> <version> <args>) ]}
+      as the first line of their [dune-project] file. [stanza_parsers]
+      defines what stanzas the user can write in [dune] files. *)
+  val make
+    :  Syntax.Version.t
+    -> (project -> Stanza.Parser.t list)
+    -> t
 
-        in their [dune-project] file. [args_spec] is used to describe
-        what [<args>] might be.
-    *)
-    val make : Syntax.Version.t -> Info.t -> t
-  end
-
-  val register : string -> One_version.t list -> unit
+  (** Register all the supported versions of a language *)
+  val register : string -> t list -> unit
 end with type project := t
 
 module Extension : sig
   type project = t
 
-  module One_version : sig
-    type t
+  (** One version of an extension *)
+  type t
 
-    module Info : sig
-      type t
+  (** [make version args_spec f] defines one version of an
+      extension. Users will enable this extension by writing:
 
-      val make
-        :  ?stanzas:Stanza.t list Sexp.Of_sexp.Constructor_spec.t list
-        -> unit
-        -> t
-    end
+      {[ (using <name> <version> <args>) ]}
 
-    (** [make version args_spec f] defines one version of an
-        extension. Users will enable this extension by writing:
+      in their [dune-project] file. [args_spec] is used to describe
+      what [<args>] might be.
+  *)
+  val make
+    :  Syntax.Version.t
+    -> ('a, Stanza.Parser.t list) Sexp.Of_sexp.Constructor_args_spec.t
+    -> (project -> 'a)
+    -> t
 
-        {[ (using <name> <version> <args>) ]}
-
-        in their [dune-project] file. [args_spec] is used to describe
-        what [<args>] might be.
-    *)
-    val make
-      :  Syntax.Version.t
-      -> ('a, Info.t) Sexp.Of_sexp.Constructor_args_spec.t
-      -> (project -> 'a)
-      -> t
-  end
-
-  val register : string -> One_version.t list -> unit
+  (** Register all the supported versions of an extension *)
+  val register : string -> t list -> unit
 end with type project := t
 
 (** Load a project description from the following directory. [files]
