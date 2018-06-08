@@ -1317,7 +1317,7 @@ module Stanzas = struct
   let () =
     let open Dune_project.Lang in
     register "dune"
-      [ make (0, 1) dune
+      [ make (1, 0) dune
       ]
 
   exception Include_loop of Path.t * (Loc.t * Path.t) list
