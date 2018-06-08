@@ -118,6 +118,7 @@ type t =
   ; version               : string option
   ; packages              : Package.t Package.Name.Map.t
   ; mutable stanza_parser : Stanza.t list Sexp.Of_sexp.t
+  ; mutable project_file  : Path.t option
   }
 
 type project = t
@@ -152,7 +153,9 @@ module Lang = struct
 
   let latest name =
     let versions = Option.value_exn (Hashtbl.find langs name) in
-    snd (Syntax.Versioned_parser.last versions)
+    Syntax.Versioned_parser.last versions
+
+  let version = fst
 end
 
 module Extension = struct
@@ -201,9 +204,10 @@ let anonymous = lazy(
     ; root          = Path.root
     ; version       = None
     ; stanza_parser = (fun _ -> assert false)
+    ; project_file  = None
     }
   in
-  t.stanza_parser <- Sexp.Of_sexp.sum (Lang.latest "dune" t);
+  t.stanza_parser <- Sexp.Of_sexp.sum (snd (Lang.latest "dune") t);
   t)
 
 let default_name ~dir ~packages =
@@ -230,7 +234,7 @@ let name ~dir ~packages =
   | Some x -> return x
   | None   -> return (default_name ~dir ~packages)
 
-let parse ~dir ~lang_stanzas ~packages =
+let parse ~dir ~lang_stanzas ~packages ~file =
   record
     (name ~dir ~packages >>= fun name ->
      field_o "version" string >>= fun version ->
@@ -248,6 +252,7 @@ let parse ~dir ~lang_stanzas ~packages =
        ; version
        ; packages
        ; stanza_parser = (fun _ -> assert false)
+       ; project_file  = Some file
        }
      in
      let extenstions_stanzas = Extension.parse t extensions in
@@ -259,7 +264,7 @@ let load_dune_project ~dir packages =
   Io.with_lexbuf_from_file fname ~f:(fun lb ->
     let lang_stanzas = Lang.parse (Dune_lexer.first_line lb) in
     let sexp = Sexp.Parser.parse lb ~mode:Many_as_one in
-    parse ~dir ~lang_stanzas ~packages sexp)
+    parse ~dir ~lang_stanzas ~packages ~file:fname sexp)
 
 let make_jbuilder_project ~dir packages =
   { kind = Jbuilder
@@ -268,6 +273,7 @@ let make_jbuilder_project ~dir packages =
   ; version = None
   ; packages
   ; stanza_parser = Sexp.Of_sexp.sum []
+  ; project_file = None
   }
 
 let load ~dir ~files =
@@ -296,3 +302,26 @@ let load ~dir ~files =
     Some (make_jbuilder_project ~dir packages)
   else
     None
+
+let project_file t =
+  match t.project_file with
+  | Some file -> file
+  | None ->
+    let file = Path.drop_optional_build_context (Path.relative t.root filename) in
+    let maj, min = fst (Lang.latest "dune") in
+    Io.write_file file (sprintf "(lang dune %d.%d)\n" maj min) ~binary:false;
+    t.project_file <- Some file;
+    file
+
+let ensure_project_file_exists t =
+  ignore (project_file t : Path.t)
+
+let append_to_project_file t str =
+  let file = project_file t in
+  let prev = Io.read_file file ~binary:false in
+  Io.with_file_out file ~binary:false ~f:(fun oc ->
+    List.iter [prev; str] ~f:(fun s ->
+      output_string oc s;
+      let len = String.length s in
+      if len > 0 && s.[len - 1] <> '\n' then output_char oc '\n'))
+

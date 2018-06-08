@@ -213,9 +213,11 @@ let load ?extra_ignored_subtrees ?(ignore_promoted_rules=false) () =
   let projects =
     File_tree.fold ftree ~traverse_ignored_dirs:false ~init:[]
       ~f:(fun dir acc ->
-        match File_tree.Dir.project dir with
-        | Some p when p.root = File_tree.Dir.path dir -> p :: acc
-        | _ -> acc)
+        let p = File_tree.Dir.project dir in
+        if p.root = File_tree.Dir.path dir then
+          p :: acc
+        else
+          acc)
   in
   let packages =
     List.fold_left projects ~init:Package.Name.Map.empty
@@ -236,13 +238,8 @@ let load ?extra_ignored_subtrees ?(ignore_promoted_rules=false) () =
       (p.root, p))
     |> Path.Map.of_list_exn
   in
+  assert (Path.Map.mem projects Path.root);
 
-  let projects =
-    if Path.Map.mem projects Path.root then
-      projects
-    else
-      Path.Map.add projects Path.root (Lazy.force Dune_project.anonymous)
-  in
   let rec walk dir jbuilds project =
     if File_tree.Dir.ignored dir then
       jbuilds

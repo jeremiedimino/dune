@@ -29,6 +29,7 @@ module Name : sig
   val decode : string -> t
 end
 
+(* CR-soon diml: make this abstract *)
 type t =
   { kind                  : Kind.t
   ; name                  : Name.t
@@ -36,6 +37,7 @@ type t =
   ; version               : string option
   ; packages              : Package.t Package.Name.Map.t
   ; mutable stanza_parser : Stanza.t list Sexp.Of_sexp.t
+  ; mutable project_file  : Path.t option
   }
 
 module Lang : sig
@@ -56,8 +58,13 @@ module Lang : sig
     -> (project -> Stanza.Parser.t list)
     -> t
 
+  val version : t -> Syntax.Version.t
+
   (** Register all the supported versions of a language *)
   val register : string -> t list -> unit
+
+  (** Latest version of the following language *)
+  val latest : string -> t
 end with type project := t
 
 module Extension : sig
@@ -94,3 +101,9 @@ val filename : string
 (** Represent the scope at the root of the workspace when the root of
     the workspace contains no [dune-project] or [<package>.opam] files. *)
 val anonymous : t Lazy.t
+
+(** Check that the dune-project file exists and create it otherwise. *)
+val ensure_project_file_exists : t -> unit
+
+(** Append the following text to the project file *)
+val append_to_project_file : t -> string -> unit

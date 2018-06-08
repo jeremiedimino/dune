@@ -108,7 +108,7 @@ module Dir = struct
     { files     : String.Set.t
     ; sub_dirs  : t String.Map.t
     ; dune_file : Dune_file.t option
-    ; project   : Dune_project.t option
+    ; project   : Dune_project.t
     }
 
   let contents t = Lazy.force t.contents
@@ -208,8 +208,8 @@ let load ?(extra_ignored_subtrees=Path.Set.empty) path =
       in
       let project =
         match Dune_project.load ~dir:path ~files with
-        | Some _ as x -> x
-        | None        -> project
+        | Some x -> x
+        | None   -> project
       in
       let dune_file, ignored_subdirs =
         if ignored then
@@ -219,24 +219,11 @@ let load ?(extra_ignored_subtrees=Path.Set.empty) path =
             match List.filter ["dune"; "jbuild"] ~f:(String.Set.mem files) with
             | [] -> (None, String.Set.empty)
             | [fn] ->
-              let file = Path.relative path fn in
-              begin
-                match fn, project with
-                | "dune", Some { kind = Jbuilder; root; _ } ->
-                  Loc.fail (Loc.in_file (Path.to_string file))
-                    "%a" Fmt.text
-                    (sprintf
-                       "'dune' files are not allowed in jbuilder projects.\n\
-                        Please run the following command to convert the \
-                        current project to a dune project:\n\
-                        \n\
-                        $ echo \"(lang dune 1.0)\" > %s"
-                       (Path.to_string_maybe_quoted
-                          (Path.relative root "dune-project")))
-                | _ -> ()
-              end;
+              if fn = "dune" then
+                Dune_project.ensure_project_file_exists project;
               let dune_file, ignored_subdirs =
-                Dune_file.load file ~kind:(Dune_file.Kind.of_basename fn)
+                Dune_file.load (Path.relative path fn)
+                  ~kind:(Dune_file.Kind.of_basename fn)
               in
               (Some dune_file, ignored_subdirs)
             | _ ->
@@ -289,7 +276,7 @@ let load ?(extra_ignored_subtrees=Path.Set.empty) path =
                        (File.of_stats (Unix.stat (Path.to_string path)))
                        path)
       ~ignored:false
-      ~project:None
+      ~project:(Lazy.force Dune_project.anonymous)
   in
   let dirs = Hashtbl.create 1024      in
   Hashtbl.add dirs Path.root root;
