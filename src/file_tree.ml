@@ -219,9 +219,24 @@ let load ?(extra_ignored_subtrees=Path.Set.empty) path =
             match List.filter ["dune"; "jbuild"] ~f:(String.Set.mem files) with
             | [] -> (None, String.Set.empty)
             | [fn] ->
+              let file = Path.relative path fn in
+              begin
+                match fn, project with
+                | "dune", Some { kind = Jbuilder; root; _ } ->
+                  Loc.fail (Loc.in_file (Path.to_string file))
+                    "%a" Fmt.text
+                    (sprintf
+                       "'dune' files are not allowed in jbuilder projects.\n\
+                        Please run the following command to convert the \
+                        current project to a dune project:\n\
+                        \n\
+                        $ echo \"(lang dune 1.0)\" > %s"
+                       (Path.to_string_maybe_quoted
+                          (Path.relative root "dune-project")))
+                | _ -> ()
+              end;
               let dune_file, ignored_subdirs =
-                Dune_file.load (Path.relative path fn)
-                  ~kind:(Dune_file.Kind.of_basename fn)
+                Dune_file.load file ~kind:(Dune_file.Kind.of_basename fn)
               in
               (Some dune_file, ignored_subdirs)
             | _ ->

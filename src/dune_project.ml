@@ -1,6 +1,12 @@
 open Import
 open Sexp.Of_sexp
 
+module Kind = struct
+  type t =
+    | Dune
+    | Jbuilder
+end
+
 module Name : sig
   type t = private
     | Named     of string
@@ -106,7 +112,8 @@ end = struct
 end
 
 type t =
-  { name                  : Name.t
+  { kind                  : Kind.t
+  ; name                  : Name.t
   ; root                  : Path.t
   ; version               : string option
   ; packages              : Package.t Package.Name.Map.t
@@ -188,7 +195,8 @@ let filename = "dune-project"
 
 let anonymous = lazy(
   let t =
-    { name          = Name.anonymous_root
+    { kind          = Dune
+    ; name          = Name.anonymous_root
     ; packages      = Package.Name.Map.empty
     ; root          = Path.root
     ; version       = None
@@ -234,7 +242,8 @@ let parse ~dir ~lang_stanzas ~packages =
           (name, (loc, ver, Sexp.Ast.List (args_loc, args))))
      >>= fun extensions ->
      let t =
-       { name
+       { kind = Dune
+       ; name
        ; root = dir
        ; version
        ; packages
@@ -253,7 +262,8 @@ let load_dune_project ~dir packages =
     parse ~dir ~lang_stanzas ~packages sexp)
 
 let make_jbuilder_project ~dir packages =
-  { name = default_name ~dir ~packages
+  { kind = Jbuilder
+  ; name = default_name ~dir ~packages
   ; root = dir
   ; version = None
   ; packages

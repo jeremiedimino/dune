@@ -2,6 +2,12 @@
 
 open Import
 
+module Kind : sig
+  type t =
+    | Dune
+    | Jbuilder
+end
+
 module Name : sig
   (** Invariants:
       - Named     s -> s <> "" and s does not contain '.' or '/'
@@ -24,7 +30,8 @@ module Name : sig
 end
 
 type t =
-  { name                  : Name.t
+  { kind                  : Kind.t
+  ; name                  : Name.t
   ; root                  : Path.t
   ; version               : string option
   ; packages              : Package.t Package.Name.Map.t
