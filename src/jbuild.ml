@@ -1278,7 +1278,9 @@ module Stanzas = struct
 
   type Stanza.t += Include of Loc.t * string
 
-  let t project : Stanza.t list Sexp.Of_sexp.Constructor_spec.t list =
+  type constructors = Stanza.t list Sexp.Of_sexp.Constructor_spec.t list
+
+  let common project : constructors =
     [ cstr "library"     (Library.v1 project @> nil) (fun x -> [Library x])
     ; cstr "executable"  (Executables.v1_single project @> nil) execs
     ; cstr "executables" (Executables.v1_multi  project @> nil) execs
@@ -1295,21 +1297,28 @@ module Stanzas = struct
         (fun glob -> [Copy_files {add_line_directive = false; glob}])
     ; cstr "copy_files#" (Copy_files.v1 @> nil)
         (fun glob -> [Copy_files {add_line_directive = true; glob}])
-    ; cstr "env" (cstr_loc (rest Env.rule))
-        (fun loc rules -> [Env { loc; rules }])
-    (* Just for validation and error messages *)
-    ; cstr "jbuild_version" (Jbuild_version.t @> nil) (fun _ -> [])
     ; cstr "include" (cstr_loc (relative_file @> nil)) (fun loc fn ->
         [Include (loc, fn)])
     ; cstr "documentation" (Documentation.v1 project @> nil)
         (fun d -> [Documentation d])
     ]
 
+  let dune project =
+    common project @
+    [ cstr "env" (cstr_loc (rest Env.rule))
+        (fun loc rules -> [Env { loc; rules }])
+    ]
+
+  let jbuild project =
+    common project @
+    [ cstr "jbuild_version" (Jbuild_version.t @> nil) (fun _ -> [])
+    ]
+
   let () =
     let open Dune_project.Lang in
     register "dune"
       [ One_version.make (0, 1)
-          (One_version.Info.make () ~stanzas:t)
+          (One_version.Info.make () ~stanzas:dune)
       ]
 
   exception Include_loop of Path.t * (Loc.t * Path.t) list
@@ -1333,7 +1342,7 @@ module Stanzas = struct
   let parse ~file ~kind (project : Dune_project.t) sexps =
     let stanza_parser =
       match (kind : File_tree.Dune_file.Kind.t) with
-      | Jbuild -> sum (t project)
+      | Jbuild -> sum (jbuild project)
       | Dune   -> project.stanza_parser
     in
     let stanzas =
