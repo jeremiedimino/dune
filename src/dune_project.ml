@@ -303,13 +303,20 @@ let load ~dir ~files =
   else
     None
 
+let notify_user file s =
+  kerrf ~f:print_to_console
+    "@{<warning>Info@}: appending this line to %s: %s\n"
+    (Path.to_string_maybe_quoted file) s
+
 let project_file t =
   match t.project_file with
   | Some file -> file
   | None ->
     let file = Path.drop_optional_build_context (Path.relative t.root filename) in
     let maj, min = fst (Lang.latest "dune") in
-    Io.write_file file (sprintf "(lang dune %d.%d)\n" maj min) ~binary:false;
+    let s = sprintf "(lang dune %d.%d)" maj min in
+    notify_user file s;
+    Io.write_file file (s ^ "\n") ~binary:false;
     t.project_file <- Some file;
     file
 
@@ -319,6 +326,7 @@ let ensure_project_file_exists t =
 let append_to_project_file t str =
   let file = project_file t in
   let prev = Io.read_file file ~binary:false in
+  notify_user file str;
   Io.with_file_out file ~binary:false ~f:(fun oc ->
     List.iter [prev; str] ~f:(fun s ->
       output_string oc s;
