@@ -24,8 +24,7 @@ rule scan acc = parse
       let strings = collect_strings [unescape s] lexbuf in
       let stop_line = lexbuf.lex_start_p.pos_lnum in
       let sp : Sexp.String_pattern.t =
-        { filename = lexbuf.lex_start_p.pos_fname
-        ; start_line
+        { start_line
         ; stop_line
         ; strings = List.sort strings ~compare:String.compare
         }
@@ -55,32 +54,31 @@ and collect_strings acc = parse
     }
 
 {
-  let print (sp : Sexp.String_pattern.t) =
+  let pr fmt = Printf.printf (fmt ^^ "\n")
+
+  let print i (sp : Sexp.String_pattern.t) =
     match sp.strings with
-    | [] -> ()
+    | [] -> assert false
     | x :: l ->
-      let pr fmt = Printf.printf (fmt ^^ "\n") in
-      pr "let block =";
-      pr "  { filename   = %S" sp.filename;
-      pr "  ; start_line = %d" sp.start_line;
-      pr "  ; stop_line  = %d" sp.stop_line;
-      pr "  ; strings    =";
-      pr "      [ %S" x;
-      List.iter l ~f:(pr "      ; %S");
-      pr "      ]";
-      pr "  }";
-      pr ""
+      pr "  %c { start_line = %d" (if i = 0 then '[' else ';') sp.start_line;
+      pr "    ; stop_line  = %d" sp.stop_line;
+      pr "    ; strings    =";
+      pr "        [ %S" x;
+      List.iter l ~f:(pr "        ; %S");
+      pr "        ]";
+      pr "    }"
 
   let () =
     let cwd = Path.External.cwd () in
     Path.set_root cwd;
     Path.set_build_dir (Path.Kind.of_string "_build");
     let files = List.tl (Array.to_list Sys.argv) in
-    List.iter files ~f:(fun fn ->
-      let path = Path.of_string fn in
-      let string_patterns =
-        Io.with_lexbuf_from_file path ~f:(fun lb ->
-          scan [] lb)
-      in
-      List.iter string_patterns ~f:print)
+    List.map files ~f:(fun fn ->
+      (fn, Io.with_lexbuf_from_file (Path.of_string fn) ~f:(scan [])))
+    |> List.filter ~f:(fun (_, l) -> l <> [])
+    |> List.iteri ~f:(fun i (fn, string_patterns) ->
+      if i > 0 then pr "";
+      pr "Sexp.String_pattern.register ~fname:%S" fn;
+      List.iteri string_patterns ~f:print;
+      pr "  ];")
 }

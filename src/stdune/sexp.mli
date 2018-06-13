@@ -182,11 +182,10 @@ end
 
 module String_pattern : sig
   type t =
-    { filename   : string
-    ; start_line : int
+    { start_line : int
     ; stop_line  : int
     ; strings    : string list
     }
 
-  val register : t list -> unit
+  val register : fname:string -> t list -> unit
 end

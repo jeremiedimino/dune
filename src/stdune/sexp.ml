@@ -61,13 +61,12 @@ end
 
 module String_pattern = struct
   type t =
-    { filename   : string
-    ; start_line : int
+    { start_line : int
     ; stop_line  : int
     ; strings    : string list
     }
 
-  let register = ignore
+  let register ~fname:_ _ = ()
 end
 
 module Of_sexp = struct
