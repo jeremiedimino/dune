@@ -679,6 +679,31 @@ module Library = struct
     ; sub_systems              : Sub_system_info.t Sub_system_name.Map.t
     }
 
+  let t ast =
+    { name                  = ast.name
+    ; public                = parse_public ast.public
+    ; synopsis              = ast.synopsis
+    ; install_c_headers     = ast.install_c_headers
+    ; ppx_runtime_libraries = ast.ppx_runtime_libraries
+
+    ; ppx_runtime_libraries    : (Loc.t * string) list
+    ; modes                    : Mode_conf.Set.t
+    ; kind                     : Kind.t
+    ; c_flags                  : Ordered_set_lang.Unexpanded.t
+    ; c_names                  : string list
+    ; cxx_flags                : Ordered_set_lang.Unexpanded.t
+    ; cxx_names                : string list
+    ; library_flags            : Ordered_set_lang.Unexpanded.t
+    ; c_library_flags          : Ordered_set_lang.Unexpanded.t
+    ; self_build_stubs_archive : string option
+    ; virtual_deps             : (Loc.t * string) list
+    ; wrapped                  : bool
+    ; optional                 : bool
+    ; buildable                : Buildable.t
+    ; dynlink                  : bool
+    ; project                  : Dune_project.t
+    ; sub_systems              : Sub_system_info.t Sub_system_name.Map.t
+  
   let v1 project =
     record
       (Buildable.v1 >>= fun buildable ->

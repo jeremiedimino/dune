@@ -1,0 +1,58 @@
+dep_conf =
+  | (file                 <template>)
+  | (alias                <template>)
+  | (alias_rec            <template>)
+  | (glob_files           <template>)
+  | (files_recursively_in <template>)
+  | (package              <template>)
+  | universe
+
+pp_or_flags =
+  | (<string>*) -> Flags
+  | <string>    -> Pp
+
+preprocess =
+ | no_preprocessing
+ | (action <action>)
+ | (pps    (pp_or_flags*))
+
+per_module <x> =
+ | (per_module (<string> <x>)*)
+ | <x> -> For_all
+
+preprocess_map = <per_module <preprocess>>
+
+js_of_ocaml = ({
+  (flags             <flags>)?
+  (javascript_files (<string>*))?
+})
+
+choice = (<string>* `->` <string>)
+
+lib_dep =
+  | <string> -> Direct
+  | (select <string> from <choice>*)
+
+lib_deps = (<lib_dep>*)
+
+buildable = {
+  (modules                        <set-lang>)?
+  (modules_without_implementation <set-lang>)?
+  (libraries                      <lib_deps>)?
+  (preprocess                     <preprocess_map>)?
+  (preprocessor_deps              <preprocessor_deps>)?
+  (lint                           <per_module <preprocess>>)?
+  (flags                          <flags>)?
+  (ocamlc_flags                   <flags>)?
+  (ocamlopt_flags                 <flags>)?
+  (js_of_ocaml                    <js_of_ocaml>)?
+  (allow_overlapping_dependencies <bool>)?
+}
+
+mode =
+  | byte
+  | native
+  | best
+
+
+
