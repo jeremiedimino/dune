@@ -1,7 +1,7 @@
 {
 open Stdune
 
-let unescape s = Scanf.sscanf s "%S%!"
+let unescape s = Scanf.sscanf s "%S%!" (fun s -> s)
 }
 
 let spaces = [' ' '\t']*
@@ -55,7 +55,7 @@ and collect_strings acc = parse
     }
 
 {
-  let print (sp : String_pattern.t) =
+  let print (sp : Sexp.String_pattern.t) =
     match sp.strings with
     | [] -> ()
     | x :: l ->
