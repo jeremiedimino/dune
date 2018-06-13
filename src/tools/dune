@@ -1,0 +1,5 @@
+(executables
+ ((names (extract_string_patterns))
+  (libraries (stdune))))
+
+(ocamllex (extract_string_patterns))

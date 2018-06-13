@@ -179,3 +179,14 @@ module type Sexpable = sig
   val t : t Of_sexp.t
   val sexp_of_t : t To_sexp.t
 end
+
+module String_pattern : sig
+  type t =
+    { filename   : string
+    ; start_line : int
+    ; stop_line  : int
+    ; strings    : string list
+    }
+
+  val register : t list -> unit
+end

@@ -59,6 +59,17 @@ module To_sexp = struct
   let unknown _ = unsafe_atom_of_string "<unknown>"
 end
 
+module String_pattern = struct
+  type t =
+    { filename   : string
+    ; start_line : int
+    ; stop_line  : int
+    ; strings    : string list
+    }
+
+  let register = ignore
+end
+
 module Of_sexp = struct
   type ast = Ast.t =
     | Atom of Loc.t * Atom.t
