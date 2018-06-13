@@ -77,6 +77,7 @@ module String_pattern = struct
 
   let collect_strings () =
     let module P = Printexc in
+    commit ();
     let bt = P.get_callstack 128 in
     let res = ref String.Set.empty in
     for i = 0 to P.raw_backtrace_length bt - 1 do
@@ -484,6 +485,8 @@ module Of_sexp = struct
         let (C.T cstr) = find_cstr cstrs sexp s in
         Constructor_args_spec.convert cstr.args sexp args cstr.make
 
+  let sum2 
+  
   let enum cstrs sexp =
     match sexp with
     | Quoted_string _ | List _ -> of_sexp_error sexp "Atom expected"

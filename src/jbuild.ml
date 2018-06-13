@@ -211,6 +211,13 @@ module Dep_conf = struct
       let cstr_sw name f =
         cstr name (String_with_vars.t @> nil) f
       in
+      sum2
+        (function
+          | "file"     -> templ >>| fun x -> File x
+          | "alias"    -> templ >>| fun x -> Alias x
+          | "universe" -> return Universe
+          | s          -> unknown_constructor s)
+
       sum
         [ cstr_sw "file"                 (fun x -> File x)
         ; cstr_sw "alias"                (fun x -> Alias x)

@@ -171,6 +171,9 @@ module Of_sexp : sig
     :  'a Constructor_spec.t list
     -> 'a t
 
+  val sum2
+    :  (string -> 
+  
   val enum : (string * 'a) list -> 'a t
 end
 
