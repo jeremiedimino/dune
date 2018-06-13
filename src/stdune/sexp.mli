@@ -187,5 +187,5 @@ module String_pattern : sig
     ; strings    : string list
     }
 
-  val register : fname:string -> t list -> unit
+  val register : (string * t list) list -> unit
 end

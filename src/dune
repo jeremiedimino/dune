@@ -16,3 +16,9 @@
  ((targets (setup.ml))
   (mode    fallback)
   (action  (copy# setup.defaults.ml setup.ml))))
+
+(rule
+ ((targets (string_patterns.ml))
+  (deps    ((glob_files *.ml)))
+  (action  (with-stdout-to ${@}
+            (run tools/extract_string_patterns.exe ${^})))))

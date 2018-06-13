@@ -60,25 +60,31 @@ and collect_strings acc = parse
     match sp.strings with
     | [] -> assert false
     | x :: l ->
-      pr "  %c { start_line = %d" (if i = 0 then '[' else ';') sp.start_line;
-      pr "    ; stop_line  = %d" sp.stop_line;
-      pr "    ; strings    =";
-      pr "        [ %S" x;
-      List.iter l ~f:(pr "        ; %S");
-      pr "        ]";
-      pr "    }"
+      pr "    %c { start_line = %d" (if i = 0 then '[' else ';') sp.start_line;
+      pr "      ; stop_line  = %d" sp.stop_line;
+      pr "      ; strings    =";
+      pr "          [ %S" x;
+      List.iter l ~f:(pr "          ; %S");
+      pr "          ]";
+      pr "      }"
 
   let () =
     let cwd = Path.External.cwd () in
     Path.set_root cwd;
     Path.set_build_dir (Path.Kind.of_string "_build");
     let files = List.tl (Array.to_list Sys.argv) in
-    List.map files ~f:(fun fn ->
-      (fn, Io.with_lexbuf_from_file (Path.of_string fn) ~f:(scan [])))
-    |> List.filter ~f:(fun (_, l) -> l <> [])
-    |> List.iteri ~f:(fun i (fn, string_patterns) ->
-      if i > 0 then pr "";
-      pr "Sexp.String_pattern.register ~fname:%S" fn;
-      List.iteri string_patterns ~f:print;
-      pr "  ];")
+    let data =
+      List.map files ~f:(fun fn ->
+        (fn, Io.with_lexbuf_from_file (Path.of_string fn) ~f:(scan [])))
+      |> List.filter ~f:(fun (_, l) -> l <> [])
+    in
+    match data with
+    | [] ->
+      pr "let data = []"
+    | _ ->
+      pr "let data =";
+      List.iteri data ~f:(fun i (fn, string_patterns) ->
+        pr "  %c %S," (if i = 0 then '[' else '%') fn;
+        List.iteri string_patterns ~f:print);
+      pr "  ]"
 }

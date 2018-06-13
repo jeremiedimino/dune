@@ -66,7 +66,37 @@ module String_pattern = struct
     ; strings    : string list
     }
 
-  let register ~fname:_ _ = ()
+  let pending = ref []
+  let table = Hashtbl.create 32
+  let commit () =
+    List.iter (List.concat !pending) ~f:(fun (fname, ts) ->
+      Hashtbl.add table fname ts);
+    pending := []
+
+  let register l = pending := l :: !pending
+
+  let collect_strings () =
+    let module P = Printexc in
+    let bt = P.get_callstack 128 in
+    let res = ref String.Set.empty in
+    for i = 0 to P.raw_backtrace_length bt - 1 do
+      let slot =
+        P.get_raw_backtrace_slot bt i |> P.convert_raw_backtrace_slot
+      in
+      let open Option.O in
+      match
+        P.Slot.location slot
+        >>= fun { filename; line_number; _ } ->
+        Hashtbl.find table filename
+        >>= fun ts ->
+        List.find ts ~f:(fun t ->
+          t.start_line <= line_number && line_number < t.stop_line)
+      with
+      | None -> ()
+      | Some t ->
+        res := String.Set.union !res (String.Set.of_list t.strings)
+    done;
+    !res
 end
 
 module Of_sexp = struct

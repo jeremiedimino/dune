@@ -4,6 +4,9 @@ include Errors
 (* To make bug reports usable *)
 let () = Printexc.record_backtrace true
 
+(* For hints *)
+let () = Sexp.String_pattern.register String_patterns.data
+
 let sprintf = Printf.sprintf
 let ksprintf = Printf.ksprintf
 
