@@ -21,7 +21,8 @@ module Make_ast
 struct
   include Ast
 
-  let rec t sexp =
+  let t_ref = ref None in
+  let rec t () =
     let path = Path.t and string = String.t in
     sum
       [ "run",
@@ -30,33 +31,33 @@ struct
          Run (prog, args))
       ; "chdir",
         (next path >>= fun dn ->
-         next t    >>| fun t ->
+         next (t ())    >>| fun t ->
          Chdir (dn, t))
       ; "setenv",
         (next string >>= fun k ->
          next string >>= fun v ->
-         next t      >>| fun t ->
+         next (t ())      >>| fun t ->
          Setenv (k, v, t))
       ; "with-stdout-to",
         (next path >>= fun fn ->
-         next t    >>| fun t ->
+         next (t ())    >>| fun t ->
          Redirect (Stdout, fn, t))
       ; "with-stderr-to",
         (next path >>= fun fn ->
-         next t    >>| fun t  ->
+         next (t ())    >>| fun t  ->
          Redirect (Stderr, fn, t))
       ; "with-outputs-to",
         (next path >>= fun fn ->
-         next t    >>| fun t  ->
+         next (t ())    >>| fun t  ->
          Redirect (Outputs, fn, t))
       ; "ignore-stdout",
-        (next t >>| fun t -> Ignore (Stdout, t))
+        (next (t ()) >>| fun t -> Ignore (Stdout, t))
       ; "ignore-stderr",
-        (next t >>| fun t -> Ignore (Stderr, t))
+        (next (t ()) >>| fun t -> Ignore (Stderr, t))
       ; "ignore-outputs",
-        (next t >>| fun t -> Ignore (Outputs, t))
+        (next (t ()) >>| fun t -> Ignore (Outputs, t))
       ; "progn",
-        (rest t >>| fun l -> Progn l)
+        (rest (t ()) >>| fun l -> Progn l)
       ; "echo",
         (next string >>= fun x ->
          rest string >>| fun xs ->
@@ -92,7 +93,6 @@ struct
          next path >>| fun file2 ->
          Diff { optional = true; file1; file2 })
       ]
-      sexp
 
   let rec sexp_of_t : _ -> Sexp.t =
     let path = Path.sexp_of_t and string = String.sexp_of_t in
@@ -224,7 +224,7 @@ module Prog = struct
 
   type t = (Path.t, Not_found.t) result
 
-  let t sexp = Ok (Path.t sexp)
+  let t : t Sexp.Of_sexp.t = map Path.t ~f:(fun x -> Ok x)
 
   let sexp_of_t = function
     | Ok s -> Path.sexp_of_t s
@@ -325,12 +325,13 @@ module Unexpanded = struct
 
   include Make_ast(String_with_vars)(String_with_vars)(String_with_vars)(Uast)
 
-  let t sexp =
-    match sexp with
-    | Atom _ | Quoted_string _ ->
-      of_sexp_errorf sexp
-        "if you meant for this to be executed with bash, write (bash \"...\") instead"
-    | List _ -> t sexp
+  let t =
+    string_or_list
+      (fun ~loc _ ->
+         Loc.fail loc
+           "If you meant for this to be executed with bash, \
+            write (bash \"...\") instead")
+      t
 
   let check_mkdir loc path =
     if not (Path.is_managed path) then

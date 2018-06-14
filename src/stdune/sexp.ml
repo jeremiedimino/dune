@@ -74,6 +74,8 @@ module Of_sexp = struct
 
   type 'a t = ast -> 'a
 
+  let parse t sexp = t sexp
+
   let located f sexp =
     (Ast.loc sexp, f sexp)
 
@@ -82,6 +84,23 @@ module Of_sexp = struct
 
   let of_sexp_errorf_loc ?hint loc fmt =
     Printf.ksprintf (fun s -> raise (Of_sexp (loc, s, hint))) fmt
+
+  let map t ~f sexp = f (t sexp)
+  let map_with_loc t ~f sexp = f ~loc:(Ast.loc sexp) (t sexp)
+  let map_result t ~f sexp =
+    match f (t sexp) with
+    | Ok x -> x
+    | Error msg -> of_sexp_error sexp msg
+
+  let string_or_list f t sexp =
+    match sexp with
+    | Atom (loc, A s) | Quoted_string (loc, s) -> f ~loc s
+    | List _ -> t sexp
+
+  let inspect f sexp =
+    match f sexp with
+    | Either.Left x -> x
+    | Right t -> t sexp
 
   let raw x = x
 
@@ -345,9 +364,13 @@ module Of_sexp = struct
       let v = t sexp in
       (v, Cstr (loc, cstr, sexps))
 
+  let next_lazy t x = next (t ()) x
+
   let rest t (Cstr (loc, cstr, sexps)) =
     (List.map sexps ~f:t,
      Cstr (loc, cstr, []))
+
+  let rest_lazy t x = rest (t ()) x
 
   let rest_as_record m (Cstr (loc, cstr, sexps)) =
     let v = parse_fields m loc sexps in

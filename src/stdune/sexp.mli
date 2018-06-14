@@ -65,7 +65,12 @@ module Of_sexp : sig
 
   exception Of_sexp of Loc.t * string * hint option
 
-  include Combinators with type 'a t = Ast.t -> 'a
+  include Combinators
+
+  val parse : 'a t -> Ast.t -> 'a
+  val map : 'a t -> f:('a -> 'b) -> 'b t
+  val map_with_loc : 'a t -> f:(loc:Loc.t -> 'a -> 'b) -> 'b t
+  val map_result : 'a t -> f:('a -> ('b, string) result) -> 'b t
 
   val of_sexp_error  : ?hint:hint -> Ast.t -> string -> _
   val of_sexp_errorf : ?hint:hint -> Ast.t -> ('a, unit, string, 'b) format4 -> 'a
@@ -73,6 +78,10 @@ module Of_sexp : sig
   val located : 'a t -> (Loc.t * 'a) t
 
   val raw : ast t
+
+  val string_or_list : (loc:Loc.t -> string -> 'a) -> 'a t -> 'a t
+
+  val inspect : (Ast.t -> ('a, 'a t) Either.t) -> 'a t
 
   val enum : (string * 'a) list -> 'a t
 
@@ -109,10 +118,12 @@ module Of_sexp : sig
 
   (** Parse and consume the next element of the list *)
   val next : 'a t -> 'a cstr_parser
+  val next_lazy : (unit -> 'a t) -> 'a cstr_parser
 
   (** Parse and consume the rest of the list as a list of element of
       the same type. *)
   val rest : 'a t -> 'a list cstr_parser
+  val rest_lazy : (unit -> 'a t) -> 'a list cstr_parser
 
   (** Parse all remaining elements as a list of fields *)
   val rest_as_record : 'a record_parser -> 'a cstr_parser
