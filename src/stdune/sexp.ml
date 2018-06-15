@@ -72,12 +72,79 @@ module Of_sexp = struct
 
   exception Of_sexp of Loc.t * string * hint option
 
-  type 'a t = ast -> 'a
+  type unparsed_field =
+    { values : Ast.t list
+    ; entry  : Ast.t
+    ; prev   : unparsed_field option (* Previous occurrence of this field *)
+    }
 
-  let parse t sexp = t sexp
+  module Name = struct
+    type t = string
+    let compare a b =
+      let alen = String.length a and blen = String.length b in
+      match Int.compare alen blen with
+      | Eq -> String.compare a b
+      | ne -> ne
+  end
 
-  let located f sexp =
-    (Ast.loc sexp, f sexp)
+  module Name_map = Map.Make(Name)
+
+  type simple = Ast.t list
+  type record =
+    { unparsed_fields : unparsed_field Name_map.t
+    ; known           : string list
+    }
+
+  type 'kind context =
+    | Cstr   : Loc.t * string -> simple parser_state
+    | Record : Loc.t          -> record parser_state
+
+  type ('a, 'kind) t = 'kind context -> 'kind -> 'a *  'kind
+
+  type 'a simple_parser = ('a, simple) t
+  type 'a record_parser = ('a, record) t
+
+  let return x _ctx state = (x, state)
+  let (>>=) m f ctx state =
+    let x, state = m ctx state in
+    f x ctx state
+  let (>>|) m f ctx state =
+    let x, state = m ctx state in
+    (f x, state)
+
+  let get_loc : type k. k context -> Loc.t = function
+    | Cstr   (loc, _) -> loc
+    | Record  loc     -> loc
+
+  let loc ctx state = (get_loc ctx, state)
+
+  let parse t sexp =
+    let loc = Ast.loc sexp in
+    t (Cstr (loc, "")) [sexp]
+
+  let located t ctx sexps =
+    let x, sexps' = t ctx sexps in
+    if sexps' == sexps then
+      (Loc.none, x)
+    else
+      match sexps with
+      | [] -> assert false
+      | sexp :: _ ->
+        ((Ast.loc sexp, x), sexps')
+
+  let simple f ctx sexps =
+    match sexps with
+    | [] -> assert false
+    | sexp :: rest ->
+      match sexp with
+      | Atom (loc, A s) | Quoted_string (loc, s) ->
+        (f loc s, rest)
+      | List _ ->
+        of_sexp_error "Atom or string expected"
+
+  let eoi _ctx = function
+    | [] -> (true, [])
+    | l  -> (false, l)
 
   let of_sexp_error ?hint sexp str = raise (Of_sexp (Ast.loc sexp, str, hint))
   let of_sexp_errorf ?hint sexp fmt = Printf.ksprintf (of_sexp_error ?hint sexp) fmt

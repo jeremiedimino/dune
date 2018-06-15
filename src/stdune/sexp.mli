@@ -65,68 +65,69 @@ module Of_sexp : sig
 
   exception Of_sexp of Loc.t * string * hint option
 
-  include Combinators
+  (** {2 Parsers} *)
 
-  val parse : 'a t -> Ast.t -> 'a
-  val map : 'a t -> f:('a -> 'b) -> 'b t
-  val map_with_loc : 'a t -> f:(loc:Loc.t -> 'a -> 'b) -> 'b t
-  val map_result : 'a t -> f:('a -> ('b, string) result) -> 'b t
+  (** Monad for parsing lists *)
+  type ('a, 'kind) t
+
+  type simple
+  type record
+
+  type 'a simple_parser = ('a, simple) t
+  type 'a record_parser = ('a, record) t
+
+  val return : 'a -> ('a, _) t
+  val ( >>= )
+    :  ('a, 'kind) t
+    -> ('a -> ('b, 'kind) t)
+    -> ('b, 'kind) t
+  val ( >>| )
+    :  ('a, 'kind) t
+    -> ('a -> 'b)
+    -> ('b, 'kind) t
+
+  val simple : (Loc.t -> string -> 'a) -> 'a simple_parser
+
+  (** Return the location of the list being parsed *)
+  val loc : (Loc.t, _) t
+
+  val eoi : bool simple_parser
+
+  include Combinators with type 'a t := 'a simple_parser
+
+  val parse : 'a simple_parser -> Ast.t -> 'a
 
   val of_sexp_error  : ?hint:hint -> Ast.t -> string -> _
   val of_sexp_errorf : ?hint:hint -> Ast.t -> ('a, unit, string, 'b) format4 -> 'a
 
-  val located : 'a t -> (Loc.t * 'a) t
+  val located : 'a simple_parser -> (Loc.t * 'a) simple_parser
 
-  val raw : ast t
+  val raw : ast simple_parser
 
-  val string_or_list : (loc:Loc.t -> string -> 'a) -> 'a t -> 'a t
+  val string_or_list : (loc:Loc.t -> string -> 'a) -> 'a t -> 'a simple_parser
 
-  val inspect : (Ast.t -> ('a, 'a t) Either.t) -> 'a t
+  val inspect : (Ast.t -> ('a, 'a simple_parser) Either.t) -> 'a simple_parser
 
-  val enum : (string * 'a) list -> 'a t
+  val enum : (string * 'a) list -> 'a simple_parser
 
   (** {2 Parsing lists} *)
 
-  (** Monad for parsing lists *)
-  type ('a, 'kind) list_parser
-
-  type 'a   cstr_parser = ('a, [`Cstr  ]) list_parser
-  type 'a record_parser = ('a, [`Record]) list_parser
-
-  val return : 'a -> ('a, _) list_parser
-  val ( >>= )
-    :  ('a, 'kind) list_parser
-    -> ('a -> ('b, 'kind) list_parser)
-    -> ('b, 'kind) list_parser
-  val ( >>| )
-    :  ('a, 'kind) list_parser
-    -> ('a -> 'b)
-    -> ('b, 'kind) list_parser
-
-  (** Return the location of the list being parsed *)
-  val list_loc : (Loc.t, _) list_parser
-
   (** Parser that parse a record, i.e. a list of s-expressions of the
       form [(<atom> <s-exp>)]. *)
-  val record : 'a record_parser -> 'a t
+  val record : 'a record_parser -> 'a simple_parser
 
   (** Parser that parse a S-expression of the form [(<atom> <s-exp1>
       <s-exp2> ...)] or [<atom>]. [<atom>] is looked up in the list and
       the remaining s-expressions are parsed using the corresponding
       list parser. *)
-  val sum : (string * 'a cstr_parser) list -> 'a t
-
-  (** Parse and consume the next element of the list *)
-  val next : 'a t -> 'a cstr_parser
-  val next_lazy : (unit -> 'a t) -> 'a cstr_parser
+  val sum : (string * 'a simple_parser) list -> 'a simple_parser
 
   (** Parse and consume the rest of the list as a list of element of
       the same type. *)
-  val rest : 'a t -> 'a list cstr_parser
-  val rest_lazy : (unit -> 'a t) -> 'a list cstr_parser
+  val rest : 'a simple_parser -> 'a list simple_parser
 
   (** Parse all remaining elements as a list of fields *)
-  val rest_as_record : 'a record_parser -> 'a cstr_parser
+  val rest_as_record : 'a record_parser -> 'a simple_parser
 
   (** Check the result of a list parser, and raise a properly located
       error in case of failure. *)
@@ -148,12 +149,12 @@ module Of_sexp : sig
     :  string
     -> ?short:'a Short_syntax.t
     -> ?default:'a
-    -> 'a t
+    -> 'a simple_parser
     -> 'a record_parser
   val field_o
     :  string
     -> ?short:'a Short_syntax.t
-    -> 'a t
+    -> 'a simple_parser
     -> 'a option record_parser
   val field_b : string -> bool record_parser
 
@@ -161,21 +162,7 @@ module Of_sexp : sig
   val dup_field
     :  string
     -> ?short:'a Short_syntax.t
-    -> 'a t
-    -> 'a list record_parser
-
-  (** Field that takes multiple values *)
-  val field_multi
-    :  string
-    -> ?default:'a
-    -> 'a cstr_parser
-    -> 'a record_parser
-
-  (** A field that can appear multiple times and each time takes
-      multiple values *)
-  val dup_field_multi
-    :  string
-    -> 'a cstr_parser
+    -> 'a simple_parser
     -> 'a list record_parser
 end
 
