@@ -342,7 +342,7 @@ module Alias0 = struct
                       Alias %S is not defined in any sub-directory of %s."
           t.name (Path.to_string_maybe_quoted src_dir)
 
-  let default     = make "DEFAULT"
+  let default     = make "default"
   let runtest     = make "runtest"
   let install     = make "install"
   let doc         = make "doc"
@@ -352,6 +352,17 @@ module Alias0 = struct
   let package_install ~(context : Context.t) ~pkg =
     make (sprintf ".%s-files" (Package.Name.to_string pkg))
       ~dir:context.build_dir
+
+  let default_alias_in_subdirs ~dir ~ctx_dir =
+    String.Map.fold (File_tree.Dir.sub_dirs dir) ~init:(Build.arr (fun x -> x))
+      ~f:(fun dir acc ->
+        let path = Path.append ctx_dir (File_tree.Dir.path dir) in
+        let fn = stamp_file (default ~dir:path) in
+        acc
+        >>>
+        Build.if_file_exists fn
+          ~then_:(Build.path fn)
+          ~else_:(Build.arr (fun x -> x)))
 end
 
 module Dir_status = struct
@@ -938,7 +949,30 @@ and load_dir_step2_exn t ~dir ~collector ~lazy_generators =
   let alias_dir = Path.append (Path.relative alias_dir context_name) sub_dir in
   let alias_rules, alias_stamp_files =
     let open Build.O in
-    String.Map.foldi collector.aliases ~init:([], Path.Set.empty)
+    let aliases = collector.aliases in
+    let aliases =
+      if String.Map.mem collector.aliases "default" then
+        aliases
+      else
+        match Path.extract_build_context_dir dir with
+        | None -> aliases
+        | Some (ctx_dir, src_dir) ->
+          match File_tree.find_dir t.file_tree src_dir with
+          | None -> aliases
+          | Some ft_dir ->
+            String.Map.add aliases "default"
+              { deps =
+                  if String.Map.mem aliases "install" then
+                    Path.Set.singleton (Alias0.stamp_file (Alias0.install ~dir))
+                  else
+                    Path.Set.empty
+              ; dyn_deps =
+                  Build.return Path.Set.empty >>>
+                  Alias0.default_alias_in_subdirs ~dir:ft_dir ~ctx_dir
+              ; actions = []
+              }
+    in
+    String.Map.foldi aliases ~init:([], Path.Set.empty)
       ~f:(fun name { Dir_status. deps; dyn_deps; actions } (rules, alias_stamp_files) ->
         let base_path = Path.relative alias_dir name in
         let rules, deps =
