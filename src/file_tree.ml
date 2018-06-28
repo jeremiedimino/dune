@@ -28,8 +28,9 @@ module Dune_file = struct
   end
 
   type t =
-    { contents : Contents.t
-    ; kind     : Kind.t
+    { contents          : Contents.t
+    ; from_project_file : Plain.t
+    ; kind              : Kind.t
     }
 
   let path t =
@@ -206,10 +207,10 @@ let load ?(extra_ignored_subtrees=Path.Set.empty) path =
           ~compare:(fun (a, _, _) (b, _, _) -> String.compare a b)
           sub_dirs
       in
-      let project =
+      let project, stanzas_from_project_file =
         match Dune_project.load ~dir:path ~files with
         | Some x -> x
-        | None   -> project
+        | None   -> (project, [])
       in
       let dune_file, ignored_subdirs =
         if ignored then

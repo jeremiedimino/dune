@@ -371,7 +371,10 @@ let parse ~dir ~lang ~packages ~file =
 
 let load_dune_project ~dir packages =
   let file = Path.relative dir filename in
-  load file ~f:(fun lang -> parse ~dir ~lang ~packages ~file)
+  load file ~f:(fun lang ->
+    parse ~dir ~lang ~packages ~file >>= fun t ->
+    remaining_fields_as_values (repeat raw) >>= fun sexps ->
+    return (t, sexps))
 
 let make_jbuilder_project ~dir packages =
   let lang = Lang.get_exn "dune" in
@@ -417,6 +420,6 @@ let load ~dir ~files =
   if String.Set.mem files filename then
     Some (load_dune_project ~dir packages)
   else if not (Package.Name.Map.is_empty packages) then
-    Some (make_jbuilder_project ~dir packages)
+    Some (make_jbuilder_project ~dir packages, [])
   else
     None

@@ -26,8 +26,9 @@ module Dune_file : sig
   end
 
   type t =
-    { contents : Contents.t
-    ; kind     : Kind.t
+    { contents          : Contents.t
+    ; from_project_file : Plain.t
+    ; kind              : Kind.t
     }
 
   val path : t -> Path.t
