@@ -237,6 +237,7 @@ module Dep_conf = struct
     | File of String_with_vars.t
     | Alias of String_with_vars.t
     | Alias_rec of String_with_vars.t
+    | Alias_in_subdirs of String_with_vars.t
     | Glob_files of String_with_vars.t
     | Source_tree of String_with_vars.t
     | Package of String_with_vars.t
@@ -274,6 +275,9 @@ module Dep_conf = struct
        List [Sexp.unsafe_atom_of_string "alias" ; String_with_vars.sexp_of_t t]
     | Alias_rec t ->
        List [Sexp.unsafe_atom_of_string "alias_rec" ;
+             String_with_vars.sexp_of_t t]
+    | Alias_in_subdirs t ->
+       List [Sexp.unsafe_atom_of_string "alias_in_subdirs" ;
              String_with_vars.sexp_of_t t]
     | Glob_files t ->
        List [Sexp.unsafe_atom_of_string "glob_files" ;

@@ -1068,7 +1068,10 @@ syntax:
 - ``(alias_rec <alias-name>)``: depend on the construction of this
   alias recursively in all children directories wherever it is
   defined. For instance: ``(alias_rec src/runtest)`` might depend on
-  ``(alias src/runtest)``, ``(alias src/foo/bar/runtest)``, ...
+- ``(alias_in_subdirs <alias-name>)``: depend on the construction of
+  this alias in all children directories wherever it is defined. For
+  instance: ``(alias_in_subdirs src/runtest)`` might depend on
+  ``(alias src/a/runtest)``, ``(alias src/b/runtest)``, ...
 - ``(glob_files <glob>)``: depend on all files matched by ``<glob>``, see the
   :ref:`glob <glob>` for details
 

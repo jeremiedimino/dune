@@ -503,6 +503,10 @@ module Deps = struct
       Alias.dep_rec ~loc:(String_with_vars.loc s) ~file_tree:t.file_tree
         (make_alias t ~scope ~dir s)
       >>^ fun () -> []
+    | Alias_in_subdirs s ->
+      Alias.dep_in_subdirs ~loc:(String_with_vars.loc s) ~file_tree:t.file_tree
+        (make_alias t ~scope ~dir s)
+      >>^ fun () -> []
     | Glob_files s -> begin
         let loc = String_with_vars.loc s in
         let path = expand_vars_path t ~scope ~dir s in

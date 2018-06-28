@@ -136,12 +136,26 @@ module Alias : sig
     -> file_tree:File_tree.t
     -> (unit, unit) Build.t
 
+  (** Implements [(alias_rec ...)] in dependency specification *)
+  val dep_rec
+    :  t
+    -> loc:Loc.t
+    -> file_tree:File_tree.t
+    -> (unit, unit) Build.t
+
   (** Implements [@alias] on the command line *)
   val dep_rec_multi_contexts
     :  dir:Path.t
     -> name:string
     -> file_tree:File_tree.t
     -> contexts:string list
+    -> (unit, unit) Build.t
+
+  (** Implements [(alias_in_subdirs ...)] in dependency specification *)
+  val dep_in_subdirs
+    :  t
+    -> loc:Loc.t
+    -> file_tree:File_tree.t
     -> (unit, unit) Build.t
 
   (** [add_deps store alias ?dyn_deps deps] arrange things so that all

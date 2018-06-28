@@ -302,6 +302,30 @@ module Alias0 = struct
              It is not defined in %s or any of its descendants."
           name (Path.to_string_maybe_quoted src_dir)
 
+  let dep_in_subdirs t ~loc ~file_tree =
+    let ctx_dir, src_dir =
+      Path.extract_build_context_dir t.dir |> Option.value_exn
+    in
+    match File_tree.find_dir file_tree src_dir with
+    | None -> Build.fail { fail = fun () ->
+      Loc.fail loc "Don't know about directory %s!"
+        (Path.to_string_maybe_quoted src_dir) }
+    | Some dir ->
+      String.Map.fold (File_tree.Dir.sub_dirs dir) ~init:(Build.return false)
+        ~f:(fun dir acc ->
+          let path = Path.append ctx_dir (File_tree.Dir.path dir) in
+          let fn = stamp_file (make ~dir:path t.name) in
+          acc
+          >>>
+          Build.if_file_exists fn
+            ~then_:(Build.path fn >>^ fun _ -> false)
+            ~else_:(Build.arr (fun x -> x)))
+      >>^ fun is_empty ->
+      if is_empty && not (is_standard t.name) then
+        Loc.fail loc "This alias is empty.\n\
+                      Alias %S is not defined in any sub-directory of %s."
+          t.name (Path.to_string_maybe_quoted src_dir)
+
   let default     = make "DEFAULT"
   let runtest     = make "runtest"
   let install     = make "install"
