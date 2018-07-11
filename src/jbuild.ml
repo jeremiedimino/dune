@@ -765,6 +765,11 @@ module Library = struct
         ]
   end
 
+  module Include_subdirs = struct
+    type t = False | True | Qualified
+    let t = enum [ "true", True; "false", False; "qualified", Qualified ]
+  end
+
   type t =
     { name                     : string
     ; public                   : Public_lib.t option
@@ -789,6 +794,7 @@ module Library = struct
     ; sub_systems              : Sub_system_info.t Sub_system_name.Map.t
     ; no_keep_locs             : bool
     ; dune_version             : Syntax.Version.t
+    ; include_subdirs          : Include_subdirs.t
     }
 
   let t =
@@ -821,6 +827,12 @@ module Library = struct
        Sub_system_info.record_parser () >>= fun sub_systems ->
        Dune_project.get_exn () >>= fun project ->
        Syntax.get_exn Stanza.syntax >>= fun dune_version ->
+       field "include_subdirs" ~default:Include_subdirs.False
+         (Syntax.since Stanza.syntax (1, 1) >>= fun () ->
+          eos >>= function
+          | true  -> return Include_subdirs.True
+          | false -> Include_subdirs.t)
+       >>= fun include_subdirs ->
        return
          { name
          ; public
@@ -845,6 +857,7 @@ module Library = struct
          ; sub_systems
          ; no_keep_locs
          ; dune_version
+         ; include_subdirs
          })
 
   let has_stubs t =

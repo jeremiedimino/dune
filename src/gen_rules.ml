@@ -349,11 +349,53 @@ module Gen(P : Install_rules.Params) = struct
     ; main_module_name : Module.Name.t
     }
 
+  let modules_in_sub_tree ~dir ~qualified =
+    let src_dir = Path.drop_build_context_exn dir in
+    let dir =
+      Option.value_exn
+        (File_tree.find_dir (SC.file_tree sctx)
+           src_dir)
+    in
+    let project = File_tree.Dir.project dir in
+    let rec loop prefix dir acc =
+      if (File_tree.Dir.project dir).name <> project.name then
+        acc
+      else begin
+        let mods =
+          modules_by_dir ~dir:(Path.append ctx.build_dir File_tree.Dir.path dir)
+        in
+        let acc =
+          if qualified then
+            Module.Name.Map.fold mods ~init:acc ~f:(fun m acc ->
+              let m = Module.add_prefix prefix m in
+              Module.Name.Map.add acc m.name m)
+          else
+            Module.Name.Map.union acc mods ~f:(fun name x y ->
+              die "Too many occurences of module %a in %a:\
+                   \n- %a\
+                   \n- %a"
+                Module.Name.pp name
+                Path.pp src_dir
+                Path.pp (Module.one_file x).path
+                Path.pp (Module.one_file y).path)
+        in
+        String.Map.foldi (File_tree.Dir.sub_dirs dir) ~init:acc
+          ~f:(fun name dir acc ->
+            let prefix = prefix ^ String.capitalize name ^ "." in
+            loop prefix dir acc)
+    in
+    loop "" dir Module.Name.Map.empty
+
   let modules_by_lib =
     let cache = Hashtbl.create 32 in
     fun (lib : Library.t) ~dir ->
       Hashtbl.find_or_add cache (dir, lib.name) ~f:(fun _ ->
-        let all_modules = modules_by_dir ~dir in
+        let all_modules =
+          match lib.include_subdirs with
+          | False     -> modules_by_dir ~dir
+          | True      -> modules_in_sub_tree ~dir ~qualified:false
+          | Qualified -> modules_in_sub_tree ~dir ~qualified:true
+        in
         let modules =
           parse_modules ~all_modules ~buildable:lib.buildable
         in

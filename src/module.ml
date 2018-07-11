@@ -80,6 +80,11 @@ let file t (kind : Ml_kind.t) =
   in
   Option.map file ~f:(fun f -> f.path)
 
+let one_file t =
+  match t.impl with
+  | Some x -> x
+  | None -> Option.value_exn t.intf
+
 let obj_file t ~obj_dir ~ext = Path.relative obj_dir (t.obj_name ^ ext)
 
 let cm_source t kind = file t (Cm_kind.source kind)

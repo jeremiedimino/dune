@@ -61,6 +61,8 @@ val cm_source : t -> Cm_kind.t -> Path.t option
 val cm_file   : t -> obj_dir:Path.t -> Cm_kind.t -> Path.t option
 val cmt_file  : t -> obj_dir:Path.t -> Ml_kind.t -> Path.t option
 
+val one_file : t -> File.t
+
 val obj_file : t -> obj_dir:Path.t -> ext:string -> Path.t
 
 (** Same as [cm_file] but doesn't raise if [cm_kind] is [Cmo] or [Cmx]
