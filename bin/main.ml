@@ -896,7 +896,18 @@ let external_lib_deps =
     ; `Blocks help_secs
     ]
   in
-  let go common only_missing targets =
+  let term =
+    let%map common = common
+    and only_missing =
+      Term.Arg.(value
+                & flag
+                & info ["missing"]
+                    ~doc:{|Only print out missing dependencies|})
+    and targets =
+      Term.Arg.(non_empty
+                & pos_all string []
+                & Arg.info [] ~docv:"TARGET")
+    in
     set_common common ~targets:[];
     let log = Log.create common in
     Scheduler.go ~log ~common
@@ -968,15 +979,7 @@ let external_lib_deps =
        if failure then raise Already_reported;
        Fiber.return ())
   in
-  ( Term.(const go
-          $ common
-          $ Arg.(value
-                 & flag
-                 & info ["missing"]
-                     ~doc:{|Only print out missing dependencies|})
-          $ Arg.(non_empty
-                 & pos_all string []
-                 & Arg.info [] ~docv:"TARGET"))
+  ( term
   , Term.info "external-lib-deps" ~doc ~man)
 
 let rules =
