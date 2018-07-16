@@ -480,79 +480,120 @@ let vfile_to_string (type a) (module K : Vfile_kind.S with type t = a) _fn x =
 module Build_exec = struct
   open Build.Repr
 
-  let exec bs t x =
-    let rec exec
-      : type a b. Path.Set.t ref -> (a, b) t -> a -> b = fun dyn_deps t x ->
-      match t with
-      | Arr f -> f x
-      | Targets _ -> x
-      | Store_vfile (Vspec.T (fn, kind)) ->
-        let file = get_file bs fn (Sexp_file kind) in
-        file.data <- Some x;
-        Write_file (fn, vfile_to_string kind fn x)
-      | Compose (a, b) ->
-        exec dyn_deps a x |> exec dyn_deps b
-      | First t ->
-        let x, y = x in
-        (exec dyn_deps t x, y)
-      | Second t ->
-        let x, y = x in
-        (x, exec dyn_deps t y)
-      | Split (a, b) ->
-        let x, y = x in
-        let x = exec dyn_deps a x in
-        let y = exec dyn_deps b y in
-        (x, y)
-      | Fanout (a, b) ->
-        let a = exec dyn_deps a x in
-        let b = exec dyn_deps b x in
-        (a, b)
-      | Paths _ -> x
-      | Paths_for_rule _ -> x
-      | Paths_glob state -> get_glob_result_exn state
-      | Contents p -> Io.read_file p
-      | Lines_of p -> Io.lines_of_file p
-      | Vpath (Vspec.T (fn, kind)) ->
-        let file : b File_spec.t = get_file bs fn (Sexp_file kind) in
-        Option.value_exn file.data
-      | Dyn_paths t ->
-        let fns = exec dyn_deps t x in
-        dyn_deps := Path.Set.union !dyn_deps fns;
-        x
-      | Record_lib_deps _ -> x
-      | Fail { fail } -> fail ()
-      | If_file_exists (_, state) ->
-        exec dyn_deps (get_if_file_exists_exn state) x
-      | Catch (t, on_error) -> begin
-          try
-            exec dyn_deps t x
-          with exn ->
-            on_error exn
-        end
-      | Lazy_no_targets t ->
-        exec dyn_deps (Lazy.force t) x
-      | Memo m ->
-        match m.state with
-        | Evaluated (x, deps) ->
-          dyn_deps := Path.Set.union !dyn_deps deps;
-          x
-        | Evaluating ->
-          die "Dependency cycle evaluating memoized build arrow %s" m.name
-        | Unevaluated ->
-          m.state <- Evaluating;
-          let dyn_deps' = ref Path.Set.empty in
-          match exec dyn_deps' m.t x with
-          | x ->
-            m.state <- Evaluated (x, !dyn_deps');
-            dyn_deps := Path.Set.union !dyn_deps !dyn_deps';
-            x
-          | exception exn ->
-            m.state <- Unevaluated;
-            reraise exn
-    in
-    let dyn_deps = ref Path.Set.empty in
-    let result = exec dyn_deps (Build.repr t) x in
-    (result, !dyn_deps)
+  module type Monad = sig
+    type 'a t
+    val return : 'a -> 'a t
+    val bind : 'a t -> f:('a -> 'b t) -> 'b t
+    val both : 'a t -> 'b t -> ('a * 'b) t
+    val catch : (unit -> 'a t) -> (exn -> 'a t) -> 'a t
+  end
+
+  module Make(M : Monad) = struct
+    let ( >>= ) m f = M.bind m ~f
+
+    let exec bs t x =
+      let rec exec
+        : type a b. Path.Set.t ref -> (a, b) t -> a -> b M.t
+        = fun dyn_deps t x ->
+          match t with
+          | Arr f -> M.return (f x)
+          | Targets _ -> M.return x
+          | Store_vfile (Vspec.T (fn, kind)) ->
+            let file = get_file bs fn (Sexp_file kind) in
+            file.data <- Some x;
+            M.return (Action.Write_file (fn, vfile_to_string kind fn x))
+          | Compose (a, b) ->
+            exec dyn_deps a x >>= exec dyn_deps b
+          | First t ->
+            let x, y = x in
+            exec dyn_deps t x >>= fun x ->
+            M.return (x, y)
+          | Second t ->
+            let x, y = x in
+            exec dyn_deps t y >>= fun y ->
+            M.return (x, y)
+          | Split (a, b) ->
+            let x, y = x in
+            M.both
+              (exec dyn_deps a x)
+              (exec dyn_deps b y)
+          | Fanout (a, b) ->
+            M.both
+              (exec dyn_deps a x)
+              (exec dyn_deps b x)
+          | Paths _ -> M.return x
+          | Paths_for_rule _ -> M.return x
+          | Paths_glob state -> M.return (get_glob_result_exn state)
+          | Contents p -> M.return (Io.read_file p)
+          | Lines_of p -> M.return (Io.lines_of_file p)
+          | Vpath (Vspec.T (fn, kind)) ->
+            let file : b File_spec.t = get_file bs fn (Sexp_file kind) in
+            M.return (Option.value_exn file.data)
+          | Dyn_paths t ->
+            exec dyn_deps t x >>= fun fns ->
+            dyn_deps := Path.Set.union !dyn_deps fns;
+            M.return x
+          | Record_lib_deps _ -> M.return x
+          | Fail { fail } -> fail ()
+          | If_file_exists (_, state) ->
+            exec dyn_deps (get_if_file_exists_exn state) x
+          | Catch (t, on_error) ->
+            M.catch
+              (fun () -> exec dyn_deps t x)
+              (fun exn -> M.return (on_error exn))
+          | Lazy_no_targets t ->
+            exec dyn_deps (Lazy.force t) x
+          | Memo m ->
+            match m.state with
+            | Evaluated (x, deps) ->
+              dyn_deps := Path.Set.union !dyn_deps deps;
+              M.return x
+            | Evaluating ->
+              die "Dependency cycle evaluating memoized build arrow %s" m.name
+            | Unevaluated ->
+              m.state <- Evaluating;
+              let dyn_deps' = ref Path.Set.empty in
+              M.catch
+                (fun () ->
+                   exec dyn_deps' m.t x >>= fun x ->
+                   m.state <- Evaluated (x, !dyn_deps');
+                   dyn_deps := Path.Set.union !dyn_deps !dyn_deps';
+                   M.return x)
+                (fun exn ->
+                   m.state <- Unevaluated;
+                   reraise exn)
+      in
+      let dyn_deps = ref Path.Set.empty in
+      let result = exec dyn_deps (Build.repr t) x in
+      (result, !dyn_deps)
+  end [@@inline always]
+
+  include Make(struct
+      type 'a t = 'a
+      let return x = x
+      let bind x ~f = f x
+      let both a b = (a, b)
+      let catch f g =
+        try
+          f ()
+        with exn ->
+          g exn
+    end)
+
+  module Partial = Make(struct
+      type 'a t = 'a option
+      let return x = Some x
+      let bind = Option.bind
+      let both a b =
+        match a, b with
+        | Some a, Some b -> Some (a, b)
+        | _ -> None
+      let catch f g =
+        try
+          f ()
+        with exn ->
+          g exn
+    end)
 end
 
 (* [copy_source] is [true] for rules copying files from the source directory *)
