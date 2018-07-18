@@ -68,6 +68,10 @@ val eval_glob : t -> dir:Path.t -> Re.re -> string list
 (** Returns the set of targets in the given directory. *)
 val targets_of : t -> dir:Path.t -> Path.Set.t
 
+(** Returns the set of targets in the given directory that have this
+    extension. *)
+val targets_with_ext_of : t -> dir:Path.t -> ext:string -> Path.t list
+
 (** Load the rules for this directory. *)
 val load_dir : t -> dir:Path.t -> unit
 

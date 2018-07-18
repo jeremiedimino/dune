@@ -1149,20 +1149,26 @@ and wait_for_file_found fn (File_spec.T file) =
 and wait_for_deps t deps =
   Fiber.parallel_iter (Path.Set.to_list deps) ~f:(wait_for_file t)
 
+let files_of_dir t ~dir =
+  Path.Table.find_or_add t.files_of dir ~f:(fun dir ->
+    let files_by_ext =
+      targets_of t ~dir
+      |> Path.Set.to_list
+      |> List.map ~f:(fun fn -> Path.extension fn, fn)
+      |> String.Map.of_list_multi
+    in
+    { files_by_ext
+    ; dir_hash = Path.to_string dir |> Digest.string |> Digest.to_hex
+    ; stamps = String.Map.empty
+    })
+
+let targets_with_ext_of t ~dir ~ext =
+  let files_of_dir = files_of_dir t ~dir in
+  Option.value (String.Map.find files_of_dir.files_by_ext ext)
+    ~default:[]
+
 let stamp_file_for_files_of t ~dir ~ext =
-  let files_of_dir =
-    Path.Table.find_or_add t.files_of dir ~f:(fun dir ->
-      let files_by_ext =
-        targets_of t ~dir
-        |> Path.Set.to_list
-        |> List.map ~f:(fun fn -> Filename.extension (Path.to_string fn), fn)
-        |> String.Map.of_list_multi
-      in
-      { files_by_ext
-      ; dir_hash = Path.to_string dir |> Digest.string |> Digest.to_hex
-      ; stamps = String.Map.empty
-      })
-  in
+  let files_of_dir = files_of_dir t ~dir in
   match String.Map.find files_of_dir.stamps ext with
   | Some fn -> fn
   | None ->
