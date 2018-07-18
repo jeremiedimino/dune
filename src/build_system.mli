@@ -20,45 +20,53 @@ val create
   -> hook:(hook -> unit)
   -> t
 
-type extra_sub_directories_to_keep =
-  | All
-  | These of String.Set.t
-
-(** A partition represent a set of targets. The set of all targets is
-    partitioned into a set of partitions. The following properties must
-    hold:
-
-    - all the rules for a given target must be in the same partition
-    - once the rules for a partition have been generated, no more
-    rules with targets in this partition can be added to the system
-*)
-module Partition : sig
-  type t
-
-  (** Create a new partition that represent all the files in the given
-      directories. *)
-  val create
-    :  dirs:Path.t list
-    -> t
-
-  val create_sub
-    :  dirs:Path.t list
-    ->
+(** Set of sub-directories *)
+module Sub_dirs : sig
+  type t =
+    | All
+    | These of String.Set.t
 end
 
-(** Set the rule generators callback. There must be one callback per
-   build context name.
+(** Set of extensions *)
+module Extensions : sig
+  type t =
+    | All
+    | These of String.Set.t
 
-    Each callback is used to generate the rules for a given directory
-    in the corresponding build context. It receive the directory for
-    which to generate the rules and the split part of the path after
-    the build context. It must return an additional list of
-    sub-directories to keep. This is in addition to the ones that are
-    present in the source tree and the ones that already contain rules.
+  val is_subset : t -> t -> bool
+end
 
-    It is expected that [f] only generate rules whose targets are
-   descendant of [dir]. *)
-val set_rule_generators : t -> (dir:Path.t -> string list -> extra_sub_directories_to_keep) String.Map.t -> unit
+module Rules_producer : sig
+  module Request : sig
+    type t =
+      { dir        : Path.t
+      ; exts       : Extensions.t
+      ; components : string list
+      }
+  end
+
+  module Outcome : sig
+    type t =
+      { dirs             : Path.Set.t
+      ; exts             : Extensions.t
+      ; sub_dirs_to_keep : Sub_dirs.t
+      }
+  end
+
+  (** Set the rule generators callback. There must be one callback per
+      build context name.
+
+      Each callback is used to generate the rules for a given directory
+      in the corresponding build context. It receive the directory for
+      which to generate the rules and the split part of the path after
+      the build context. It must return an additional list of
+      sub-directories to keep. This is in addition to the ones that are
+      present in the source tree and the ones that already contain rules.
+
+      It is expected that [f] only generate rules whose targets are
+      descendant of [dir]. *)
+  val set : t -> (Request.t -> Outcome.t) -> unit
+end
 
 (** All other functions in this section must be called inside the rule generator
     callback. *)
