@@ -341,13 +341,20 @@ module Alias0 = struct
       ~dir:context.build_dir
 end
 
-module Dir_status = struct
-  type waiting_for_load_dir =
+module Partition = struct
+  type t =
+    { dir : Path.t
+    ; ext : string
+    }
+end
+
+module Partition_status = struct
+  type waiting_for_load_partition =
     { mutable lazy_generators : (unit -> unit) list }
 
   type collection_stage =
     | Loading
-    | Pending of waiting_for_load_dir
+    | Pending of waiting_for_load_partition
 
   type alias_action =
     { stamp  : Digest.t
@@ -355,7 +362,6 @@ module Dir_status = struct
     ; locks  : Path.t list
     ; context : Context.t
     }
-
 
   type alias =
     { mutable deps     : Path.Set.t

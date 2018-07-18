@@ -24,6 +24,28 @@ type extra_sub_directories_to_keep =
   | All
   | These of String.Set.t
 
+(** A partition represent a set of targets. The set of all targets is
+    partitioned into a set of partitions. The following properties must
+    hold:
+
+    - all the rules for a given target must be in the same partition
+    - once the rules for a partition have been generated, no more
+    rules with targets in this partition can be added to the system
+*)
+module Partition : sig
+  type t
+
+  (** Create a new partition that represent all the files in the given
+      directories. *)
+  val create
+    :  dirs:Path.t list
+    -> t
+
+  val create_sub
+    :  dirs:Path.t list
+    ->
+end
+
 (** Set the rule generators callback. There must be one callback per
    build context name.
 
