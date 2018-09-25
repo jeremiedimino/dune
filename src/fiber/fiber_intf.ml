@@ -118,34 +118,6 @@ module type S = sig
   *)
   val parallel_iter : 'a list -> f:('a -> unit t) -> unit t
 
-  (** {1 Local storage} *)
-
-  (** Variables local to a fiber *)
-  module Var : sig
-    type 'a fiber = 'a t
-    type 'a t
-
-    (** Create a new variable *)
-    val create : unit -> 'a t
-
-    (** [get var] is a fiber that reads the value of [var] *)
-    val get : 'a t -> 'a option fiber
-
-    (** Same as [get] but raises if [var] is unset. *)
-    val get_exn : 'a t -> 'a fiber
-
-    (** [set var value fiber] sets [var] to [value] during the execution
-        of [fiber].
-
-        For instance, the following fiber always evaluate to [true]:
-
-        {[
-          set v x (get_exn v >>| fun y -> x = y)
-        ]}
-    *)
-    val set : 'a t -> 'a -> 'b fiber -> 'b fiber
-  end with type 'a fiber := 'a t
-
   (** {1 Error handling} *)
 
   (** [with_error_handler f ~on_error] calls [on_error] for every
@@ -247,4 +219,37 @@ module type S = sig
     val create : unit -> t
     val with_lock : t -> (unit -> 'a fiber) -> 'a fiber
   end with type 'a fiber := 'a t
+end
+
+module type S_with_effects = sig
+  include S
+
+  (** "parent" type, i.e. fibers without effects *)
+  type 'a parent
+
+  (** {1 Effects} *)
+
+  (** Type of effects the fiber is allowed to perform *)
+  type 'a effect
+
+  (** Perform an effect *)
+  val perform : 'a effect -> 'a t
+
+  (** Effect whose impact is local to a fiber. *)
+  type local_effect
+
+  (** [with_ effect t] applies an effect for the duration of [t]. *)
+  val with_ : local_effect -> 'a t -> 'a t
+end
+
+module type Effect_handler = sig
+  type 'a fiber
+
+  type 'a effect
+  type local_effect
+
+  type context
+
+  val perform : context -> 'a effect -> 'a fiber
+  val apply : local_effect -> context -> context
 end

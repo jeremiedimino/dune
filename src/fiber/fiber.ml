@@ -1,15 +1,26 @@
 open! Stdune
 
 module type S = Fiber_intf.S
+module type Effect_handler = Fiber_intf.Effect_handler
 
-module Execution_context : sig
-  type t
+module With_effects
+    (Fiber : S)
+    (Handler : Effect_handler with type 'a fiber := 'a Fiber.t) : sig
+  include S
+    with type 'a effect := 'a Handler.effect
+    with type local_effect := Handler.local_effect
 
-  val create_initial : unit -> t
-  val forward_error : t -> exn -> unit
+  val wrap : 'a Fiber.t -> 'a t
+  val handle_effects : Handler.context -> 'a t -> 'a Fiber.t
+end = struct
+  module Execution_context : sig
+    type t
 
-  val add_refs : t -> int -> unit
-  val deref : t -> unit
+    val create_initial : unit -> t
+    val forward_error : t -> exn -> unit
+
+    val add_refs : t -> int -> unit
+    val deref : t -> unit
 
   (* Create a new context with a new referebce count. [on_release] is called when the
      context is no longer used. *)
