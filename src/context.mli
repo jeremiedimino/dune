@@ -138,14 +138,14 @@ val create
   -> ?workspace_env:Dune_env.Stanza.t
   -> env:Env.t
   -> Workspace.Context.t
-  -> t list Fiber.t
+  -> t list Scheduler.fiber
 
 val which : t -> string -> Path.t option
 
-val opam_config_var : t -> string -> string option Fiber.t
+val opam_config_var : t -> string -> string option Scheduler.fiber
 
-val install_prefix : t -> Path.t Fiber.t
-val install_ocaml_libdir : t -> Path.t option Fiber.t
+val install_prefix : t -> Path.t Scheduler.fiber
+val install_ocaml_libdir : t -> Path.t option Scheduler.fiber
 
 (** Return the compiler needed for this compilation mode *)
 val compiler : t -> Mode.t -> Path.t option

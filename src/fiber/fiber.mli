@@ -8,54 +8,57 @@ open! Stdune
     that using the same fiber twice will execute it twice, which is
     probably not what you want. To share the result of a fiber, use an
     [Ivar.t].  *)
-type 'a t
+type ('a, 'context) t
 
 (** Create a fiber that has already terminated. *)
-val return : 'a -> 'a t
+val return : 'a -> ('a, _) t
 
 (** Fiber that never completes. *)
-val never : 'a t
+val never : ('a, _) t
 
 module O : sig
   (** [>>>] is a sequencing operator. [a >>> b] is the fiber that
       first executes [a] and then [b]. *)
-  val (>>>) : unit t -> 'a t -> 'a t
+  val (>>>) : (unit, 'ctx) t -> ('a, 'ctx) t -> ('a, 'ctx) t
 
   (** [>>=] is similar to [>>>] except that the result of the first
       fiber is used to create the second one. *)
-  val (>>=) : 'a t -> ('a -> 'b t) -> 'b t
+  val (>>=) : ('a, 'ctx) t -> ('a -> ('b, 'ctx) t) -> ('b, 'ctx) t
 
   (** [t >>| f] is the same as [t >>= fun x -> return (f x)] but
       slightly more efficient. *)
-  val (>>|) : 'a t -> ('a -> 'b) -> 'b t
+  val (>>|) : ('a, 'ctx) t -> ('a -> 'b) -> ('b, 'ctx) t
 end
 
 (** {1 Forking execution} *)
 
 module Future : sig
-  type 'a fiber
+  type ('a, 'ctx) fiber
 
   (** A future represent a promise that will eventually yield a
       value. It is used to represent the result of a fiber running in
       the background. *)
-  type 'a t
+  type ('a, 'ctx) t
 
   (** Wait for the given future to yield a value. *)
-  val wait : 'a t -> 'a fiber
+  val wait : ('a, 'ctx) t -> ('a, 'ctx) fiber
 
   (** Return [Some x] if [t] has already returned. *)
-  val peek : 'a t -> 'a option
-end with type 'a fiber := 'a t
+  val peek : ('a, 'ctx) t -> 'a option
+end with type ('a, 'ctx) fiber := ('a, 'ctx) t
 
 (** [fork f] creates a sub-fiber and return a [Future.t] to wait its result. *)
-val fork : (unit -> 'a t) -> 'a Future.t t
+val fork : (unit -> ('a, 'ctx) t) -> (('a, 'ctx) Future.t, 'ctx) t
 
 (** [nfork l] is similar to [fork] but creates [n] sub-fibers. *)
-val nfork : (unit -> 'a t) list -> 'a Future.t list t
+val nfork : (unit -> ('a, 'ctx) t) list -> (('a, 'ctx) Future.t list, 'ctx) t
 
 (** [nfork_map l ~f] is the same as [nfork (List.map l ~f:(fun x () ->
     f x))] but more efficient. *)
-val nfork_map : 'a list -> f:('a -> 'b t) -> 'b Future.t list t
+val nfork_map
+  :  'a list
+  -> f:('a -> ('b, 'ctx) t)
+  -> (('b, 'ctx) Future.t list, 'ctx) t
 
 (** {1 Joining} *)
 
@@ -63,9 +66,9 @@ val nfork_map : 'a list -> f:('a -> 'b t) -> 'b Future.t list t
     several fibers into one. Note that they do not introduce
     parallelism. *)
 
-val both : 'a t -> 'b t -> ('a * 'b) t
-val all : 'a t list -> 'a list t
-val all_unit : unit t list -> unit t
+val both : ('a, 'ctx) t -> ('b, 'ctx) t -> ('a * 'b, 'ctx) t
+val all : ('a, 'ctx) t list -> ('a list, 'ctx) t
+val all_unit : (unit, 'ctx) t list -> (unit, 'ctx) t
 
 (** {1 Forking + joining} *)
 
@@ -85,7 +88,10 @@ val all_unit : unit t list -> unit t
         both (Future.wait a) (Future.wait b)
       ]}
 *)
-val fork_and_join : (unit -> 'a t) -> (unit -> 'b t) -> ('a * 'b) t
+val fork_and_join
+  :  (unit -> ('a, 'ctx) t)
+  -> (unit -> ('b, 'ctx) t)
+  -> ('a * 'b, 'ctx) t
 
 (** Same but assume the first fiber returns [unit]:
 
@@ -96,7 +102,10 @@ val fork_and_join : (unit -> 'a t) -> (unit -> 'b t) -> ('a * 'b) t
         Future.wait a >>> Future.wait b
     ]}
 *)
-val fork_and_join_unit : (unit -> unit t) -> (unit -> 'a t) -> 'a t
+val fork_and_join_unit
+  :  (unit -> (unit, 'ctx) t)
+  -> (unit -> ('a, 'ctx) t)
+  -> ('a, 'ctx) t
 
 (** Map a list in parallel:
 
@@ -106,7 +115,10 @@ val fork_and_join_unit : (unit -> unit t) -> (unit -> 'a t) -> 'a t
         all (List.map futures ~f:Future.wait)
     ]}
 *)
-val parallel_map : 'a list -> f:('a -> 'b t) -> 'b list t
+val parallel_map
+  : 'a list
+  -> f:('a -> ('b, 'ctx) t)
+  -> ('b list, 'ctx) t
 
 (** Iter over a list in parallel:
 
@@ -116,35 +128,30 @@ val parallel_map : 'a list -> f:('a -> 'b t) -> 'b list t
         all_unit (List.map futures ~f:Future.wait)
     ]}
 *)
-val parallel_iter : 'a list -> f:('a -> unit t) -> unit t
+val parallel_iter
+  :  'a list
+  -> f:('a -> (unit, 'ctx) t)
+  -> (unit, 'ctx) t
 
-(** {1 Local storage} *)
+(** {1 Context mamagement} *)
 
-(** Variables local to a fiber *)
-module Var : sig
-  type 'a fiber = 'a t
-  type 'a t
+module type Context_types = sig
+  type t
 
-  (** Create a new variable *)
-  val create : unit -> 'a t
+  (** Type witness for fibers using [context] *)
+  type witness
 
-  (** [get var] is a fiber that reads the value of [var] *)
-  val get : 'a t -> 'a option fiber
+  (** Proof that [context] and [witness] are equal. *)
+  val eq : (t, witness) Type_eq.t
+end
 
-  (** Same as [get] but raises if [var] is unset. *)
-  val get_exn : 'a t -> 'a fiber
+module Create_context(Context : Context_types) : sig
+  (** Return the current context *)
+  val get : (Context.t, Context.witness) t
 
-  (** [set var value fiber] sets [var] to [value] during the execution
-      of [fiber].
-
-      For instance, the following fiber always evaluate to [true]:
-
-      {[
-        set v x (get_exn v >>| fun y -> x = y)
-      ]}
- *)
-  val set : 'a t -> 'a -> 'b fiber -> 'b fiber
-end with type 'a fiber := 'a t
+  (** [set context fiber] sets the context to use in [fiber] *)
+  val set : Context.t -> ('b, Context.witness) t -> ('b, _) t
+end
 
 (** {1 Error handling} *)
 
@@ -157,9 +164,9 @@ end with type 'a fiber := 'a t
     It is guaranteed that after the fiber has returned a value,
     [on_error] will never be called.  *)
 val with_error_handler
-  :  (unit -> 'a t)
+  :  (unit -> ('a, 'ctx) t)
   -> on_error:(exn -> unit)
-  -> 'a t
+  -> ('a, 'ctx) t
 
 (** If [t] completes without raising, then [wait_errors t] is the same
     as [t () >>| fun x -> Ok x]. However, if the execution of [t] is
@@ -184,7 +191,7 @@ val with_error_handler
         (fork (fun () -> sleep 3) >>= fun _ -> raise Exit)
     ]}
 *)
-val wait_errors : 'a t -> ('a, unit) Result.t t
+val wait_errors : ('a, 'ctx) t -> (('a, unit) Result.t, 'ctx) t
 
 (** [fold_errors f ~init ~on_error] calls [on_error] for every
     exception raised during the execution of [f]. This include
@@ -194,10 +201,10 @@ val wait_errors : 'a t -> ('a, unit) Result.t t
     Exceptions raised by [on_error] are passed on to the parent error
     handler. *)
 val fold_errors
-  :  (unit -> 'a t)
+  :  (unit -> ('a, 'ctx) t)
   -> init:'b
   -> on_error:(exn -> 'b -> 'b)
-  -> ('a, 'b) Result.t t
+  -> (('a, 'b) Result.t, 'ctx) t
 
 (** [collect_errors f] is:
 
@@ -208,55 +215,55 @@ val fold_errors
     ]}
 *)
 val collect_errors
-  :  (unit -> 'a t)
-  -> ('a, exn list) Result.t t
+  :  (unit -> ('a, 'ctx) t)
+  -> (('a, exn list) Result.t, 'ctx) t
 
 (** [finalize f ~finally] runs [finally] after [f ()] has terminated,
     whether it fails or succeeds. *)
 val finalize
-  :  (unit -> 'a t)
-  -> finally:(unit -> unit t)
-  -> 'a t
+  :  (unit -> ('a, 'ctx) t)
+  -> finally:(unit -> (unit, 'ctx) t)
+  -> ('a, 'ctx) t
 
 (** {1 Synchronization} *)
 
 (** Write once variables *)
 module Ivar : sig
-  type 'a fiber = 'a t
+  type ('a, 'ctx) fiber = ('a, 'ctx) t
 
   (** A ivar is a synchronization variable that can be written only
       once. *)
-  type 'a t
+  type ('a, 'ctx) t
 
   (** Create a new empty ivar. *)
-  val create : unit -> 'a t
+  val create : unit -> ('a, _) t
 
   (** Read the contents of the ivar. *)
-  val read : 'a t -> 'a fiber
+  val read : ('a, 'ctx) t -> ('a, 'ctx) fiber
 
   (** Fill the ivar with the following value. This can only be called
       once for a given ivar. *)
-  val fill : 'a t -> 'a -> unit fiber
+  val fill : ('a, 'ctx) t -> 'a -> (unit, 'ctx) fiber
 
   (** Return [Some x] is [fill t x] has been called previously. *)
-  val peek : 'a t -> 'a option
-end with type 'a fiber := 'a t
+  val peek : ('a, _) t -> 'a option
+end with type ('a, 'ctx) fiber := ('a, 'ctx) t
 
 module Mutex : sig
-  type 'a fiber = 'a t
-  type t
-  val create : unit -> t
-  val with_lock : t -> (unit -> 'a fiber) -> 'a fiber
-end with type 'a fiber := 'a t
+  type ('a, 'ctx) fiber = ('a, 'ctx) t
+  type 'ctx t
+  val create : unit -> _ t
+  val with_lock : 'ctx t -> (unit -> ('a, 'ctx) fiber) -> ('a, 'ctx) fiber
+end with type ('a, 'ctx) fiber := ('a, 'ctx) t
 
 (** {1 Running fibers} *)
 
 (** Wait for one iteration of the scheduler *)
-val yield : unit -> unit t
+val yield : unit -> (unit, _) t
 
 (** [run t] runs a fiber until it yield a result. If it becomes clear
     that the execution of the fiber will never terminate, raise
     [Never]. *)
-val run : 'a t -> 'a
+val run : ('a, unit) t -> 'a
 
 exception Never

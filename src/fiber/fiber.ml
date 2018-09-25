@@ -1,13 +1,13 @@
 open! Stdune
 
 module Execution_context : sig
-  type t
+  type 'ctx t
 
-  val create_initial : unit -> t
-  val forward_error : t -> exn -> unit
+  val create_initial : unit -> unit t
+  val forward_error : _ t -> exn -> unit
 
-  val add_refs : t -> int -> unit
-  val deref : t -> unit
+  val add_refs : _ t -> int -> unit
+  val deref : _ t -> unit
 
   (* Create a new context with a new referebce count. [on_release] is called when the
      context is no longer used. *)
@@ -21,24 +21,24 @@ module Execution_context : sig
     -> on_error:(exn -> unit)
     -> t
 
-  val vars : t -> Univ_map.t
-  val set_vars : t -> Univ_map.t -> t
+  val user_context : 'ctx t -> 'ctx
+  val set_user_context : _ t -> 'ctx -> 'ctx t
 end = struct
-  type t =
+  type 'ctx t =
     { on_error : exn -> unit (* This callback must never raise *)
     ; fibers   : int ref (* Number of fibers running in this execution
                             context *)
-    ; vars     : Univ_map.t
+    ; user_context : 'ctx
     ; on_release : unit -> unit
     }
 
-  let vars t = t.vars
-  let set_vars t vars = { t with vars }
+  let user_context t = t.user_context
+  let set_user_context t user_context = { t with user_context }
 
   let create_initial () =
     { on_error   = reraise
     ; fibers     = ref 1
-    ; vars       = Univ_map.empty
+    ; user_context = ()
     ; on_release = ignore
     }
 
@@ -88,7 +88,7 @@ end
 
 module EC = Execution_context
 
-type 'a t = Execution_context.t -> ('a -> unit) -> unit
+type ('a, 'ctx) t = 'ctx Execution_context.t -> ('a -> unit) -> unit
 
 let return x _ k = k x
 
@@ -223,18 +223,16 @@ let parallel_iter l ~f ctx k =
       with exn ->
         EC.forward_error ctx exn)
 
-module Var = struct
-  include Univ_map.Key
+module type Context_types = sig
+  type t
+  type witness
+  val eq : (t, witness) Type_eq.t
+end
 
-  let get     var ctx k = k (Univ_map.find     (EC.vars ctx) var)
-  let get_exn var ctx k = k (Univ_map.find_exn (EC.vars ctx) var)
-
-  let set var x fiber ctx k =
-    let ctx = EC.set_vars ctx (Univ_map.add (EC.vars ctx) var x) in
-    fiber ctx k
-
-  let create () =
-    create ~name:"var" (fun _ -> Sexp.To_sexp.string "var")
+module Create_context(Context : Context_types) = struct
+  let get ctx k = k (EC.user_context ctx)
+  let set uc fiber ctx k =
+    fiber (EC.set_user_context ctx uc) k
 end
 
 let with_error_handler f ~on_error ctx k =
@@ -242,8 +240,9 @@ let with_error_handler f ~on_error ctx k =
     try
       on_error exn
     with exn ->
-      (* Increase the ref-counter of the parent context since this error doesn't originate
-         from a fiber and so doesn't change the number of running fibers. *)
+      (* Increase the ref-counter of the parent context since this
+         error doesn't originate from a fiber and so doesn't change
+         the number of running fibers. *)
       EC.add_refs ctx 1;
       EC.forward_error ctx exn
   in
@@ -289,9 +288,9 @@ let finalize f ~finally =
   | Error () -> never
 
 module Handler = struct
-  type 'a t =
+  type ('a, 'ctx) t =
     { run : 'a -> unit
-    ; ctx : Execution_context.t
+    ; ctx : 'ctx Execution_context.t
     }
 
   let run t x =
@@ -302,11 +301,11 @@ module Handler = struct
 end
 
 module Ivar = struct
-  type 'a state =
+  type ('a, 'ctx) state =
     | Full  of 'a
-    | Empty of 'a Handler.t Queue.t
+    | Empty of ('a, 'ctx) Handler.t Queue.t
 
-  type 'a t = { mutable state : 'a state }
+  type ('a, 'ctx) t = { mutable state : ('a, 'ctx) state }
 
   let create () = { state = Empty (Queue.create ()) }
 
@@ -334,7 +333,7 @@ module Ivar = struct
 end
 
 module Future = struct
-  type 'a t = 'a Ivar.t
+  type ('a, 'ctx) t = ('a, 'ctx) Ivar.t
 
   let wait = Ivar.read
   let peek = Ivar.peek
@@ -374,9 +373,9 @@ let nfork_map l ~f ctx k =
 let nfork l : _ Future.t list t = nfork_map l ~f:(fun f -> f ())
 
 module Mutex = struct
-  type t =
+  type 'ctx t =
     { mutable locked  : bool
-    ; mutable waiters : unit Handler.t Queue.t
+    ; mutable waiters : (unit, 'ctx) Handler.t Queue.t
     }
 
   let lock t ctx k =

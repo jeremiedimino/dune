@@ -2,10 +2,36 @@ open! Stdune
 open Import
 open Fiber.O
 
-type job =
-  { pid  : int
-  ; ivar : Unix.process_status Fiber.Ivar.t
+type status_line_config =
+  { message   : string option
+  ; show_jobs : bool
   }
+
+type t =
+  { log                        : Log.t
+  ; original_cwd               : string
+  ; display                    : Config.Display.t
+  ; mutable concurrency        : int
+  ; waiting_for_available_job  : (t, witness) Fiber.Ivar.t Queue.t
+  ; mutable status_line        : string
+  ; mutable gen_status_line    : unit -> status_line_config
+  ; mutable cur_build_canceled : bool
+  }
+
+and job =
+  { pid  : int
+  ; ivar : (Unix.process_status, witness) Fiber.Ivar.t
+  }
+
+and witness = t
+
+type 'a fiber = ('a, witness) Fiber.t
+
+module C = Fiber.Create_context(struct
+    type nonrec t = t
+    type nonrec witness = witness
+    let eq = Type_eq.Eq
+  end)
 
 (** The event queue *)
 module Event : sig
@@ -102,11 +128,6 @@ end = struct
 end
 
 let ignore_for_watch = Event.ignore_next_file_change_event
-
-type status_line_config =
-  { message   : string option
-  ; show_jobs : bool
-  }
 
 module File_watcher : sig
   (** Initializes the file watcher. *)
@@ -371,17 +392,6 @@ end = struct
   let init () = Lazy.force init
 end
 
-type t =
-  { log                        : Log.t
-  ; original_cwd               : string
-  ; display                    : Config.Display.t
-  ; mutable concurrency        : int
-  ; waiting_for_available_job  : t Fiber.Ivar.t Queue.t
-  ; mutable status_line        : string
-  ; mutable gen_status_line    : unit -> status_line_config
-  ; mutable cur_build_canceled : bool
-  }
-
 let log t = t.log
 let display t = t.display
 
@@ -402,8 +412,6 @@ let print t msg =
   prerr_string msg;
   show_status_line s;
   flush stderr
-
-let t_var : t Fiber.Var.t = Fiber.Var.create ()
 
 let update_status_line t =
   if t.display = Progress then begin
@@ -427,16 +435,16 @@ let update_status_line t =
   end
 
 let set_status_line_generator f =
-  Fiber.Var.get_exn t_var >>| fun t ->
+  C.get >>| fun t ->
   t.gen_status_line <- f;
   update_status_line t
 
 let set_concurrency n =
-  Fiber.Var.get_exn t_var >>| fun t ->
+  C.get >>| fun t ->
   t.concurrency <- n
 
 let wait_for_available_job () =
-  Fiber.Var.get_exn t_var >>= fun t ->
+  C.get >>= fun t ->
   if Event.pending_jobs () < t.concurrency then
     Fiber.return t
   else begin
@@ -535,14 +543,12 @@ let prepare ?(log=Log.no_log) ?(config=Config.default)
   t
 
 let run t fiber =
-  let fiber =
-    Fiber.Var.set t_var t
-      (Fiber.with_error_handler fiber ~on_error:Report_error.report)
-  in
+  let fiber = Fiber.with_error_handler fiber ~on_error:Report_error.report in
   Fiber.run
-    (Fiber.fork_and_join_unit
-       (fun () -> go_rec t)
-       (fun () -> fiber))
+    (C.set t
+       (Fiber.fork_and_join_unit
+          (fun () -> go_rec t)
+          (fun () -> fiber)))
 
 let go ?log ?config ?gen_status_line fiber =
   let t = prepare ?log ?config ?gen_status_line () in

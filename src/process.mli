@@ -46,7 +46,7 @@ val run
   -> (unit, 'a) failure_mode
   -> Path.t
   -> string list
-  -> 'a Fiber.t
+  -> 'a Scheduler.fiber
 
 (** Run a command and capture its output *)
 val run_capture
@@ -57,7 +57,7 @@ val run_capture
   -> (string, 'a) failure_mode
   -> Path.t
   -> string list
-  -> 'a Fiber.t
+  -> 'a Scheduler.fiber
 val run_capture_line
   :  ?dir:Path.t
   -> ?stderr_to:std_output_to
@@ -66,7 +66,7 @@ val run_capture_line
   -> (string, 'a) failure_mode
   -> Path.t
   -> string list
-  -> 'a Fiber.t
+  -> 'a Scheduler.fiber
 val run_capture_lines
   :  ?dir:Path.t
   -> ?stderr_to:std_output_to
@@ -75,5 +75,4 @@ val run_capture_lines
   -> (string list, 'a) failure_mode
   -> Path.t
   -> string list
-  -> 'a Fiber.t
-
+  -> 'a Scheduler.fiber
