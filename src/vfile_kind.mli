@@ -3,7 +3,7 @@ open Import
 module Id : sig
   type 'a t
 
-  val eq : 'a t -> 'b t -> ('a, 'b) eq option
+  val eq : 'a t -> 'b t -> ('a, 'b) Type_eq.t option
 end
 
 module type S = sig
