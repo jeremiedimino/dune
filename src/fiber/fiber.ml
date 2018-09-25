@@ -1,5 +1,7 @@
 open! Stdune
 
+module type S = Fiber_intf.S
+
 module Execution_context : sig
   type t
 
