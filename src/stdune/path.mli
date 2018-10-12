@@ -34,6 +34,8 @@ val compare : t -> t -> Ordering.t
 
 val equal : t -> t -> bool
 
+val hash : t -> int
+
 module Set : sig
   include Set.S with type elt = t
   val to_sexp : t Sexp.Encoder.t

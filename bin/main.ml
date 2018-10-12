@@ -258,9 +258,9 @@ let external_lib_deps =
        >>= fun setup ->
        let targets = Target.resolve_targets_exn ~log common setup targets in
        let request = Target.request setup targets in
-       let failure =
+       Build_system.all_lib_deps_by_context setup.build_system ~request
+       >>|
          String.Map.foldi ~init:false
-           (Build_system.all_lib_deps_by_context setup.build_system ~request)
            ~f:(fun context_name lib_deps acc ->
              let internals =
                Super_context.internal_lib_names
@@ -319,7 +319,7 @@ let external_lib_deps =
                  (format_external_libs externals);
                acc
              end)
-       in
+       >>= fun failure ->
        if failure then raise Already_reported;
        Fiber.return ())
   in

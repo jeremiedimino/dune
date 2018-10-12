@@ -7,6 +7,7 @@ module Exn        = Exn
 module Filename   = Filename
 module Hashtbl    = Hashtbl
 module Int        = Int
+module Id         = Id
 module Io         = Io
 module List       = List
 module Map        = Map
@@ -32,6 +33,8 @@ module Proc       = Proc
 module Type_eq    = Type_eq
 module Nothing    = Nothing
 module Bin        = Bin
+module Fdecl      = Fdecl
+module Unit       = Unit
 
 external reraise : exn -> _ = "%reraise"
 

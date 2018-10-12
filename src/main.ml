@@ -119,7 +119,7 @@ let find_context_exn t ~name =
 let external_lib_deps ?log ~packages () =
   Scheduler.go ?log
     (setup () ~external_lib_deps_mode:true
-     >>| fun setup ->
+     >>= fun setup ->
      let context = find_context_exn setup ~name:"default" in
      let install_files =
        List.map packages ~f:(fun pkg ->
@@ -129,9 +129,10 @@ let external_lib_deps ?log ~packages () =
      in
      let sctx = String.Map.find_exn setup.scontexts "default" in
      let internals = Super_context.internal_lib_names sctx in
+     Build_system.all_lib_deps setup.build_system
+          ~request:(Build.paths install_files)
+     >>|
      Path.Map.map
-       (Build_system.all_lib_deps setup.build_system
-          ~request:(Build.paths install_files))
        ~f:(Lib_name.Map.filteri ~f:(fun name _ ->
          not (Lib_name.Set.mem internals name))))
 

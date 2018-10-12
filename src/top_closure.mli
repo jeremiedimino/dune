@@ -17,6 +17,13 @@ module type S = sig
     -> deps:('a -> 'a list)
     -> 'a list
     -> ('a list, 'a list) result
+
+  (** Returns [Error cycle] in case the graph is not a DAG *)
+  val top_closure_f
+    :  key:('a -> key)
+    -> deps:('a -> 'a list Fiber.t)
+    -> 'a list
+    -> ('a list, 'a list) result Fiber.t
 end
 
 module Int    : S with type key := int
