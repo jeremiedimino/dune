@@ -702,7 +702,6 @@ module Sub_system_info = struct
     type t
     type sub_system += T of t
     val name   : Sub_system_name.t
-    val loc    : t -> Loc.t
     val syntax : Syntax.t
     val parse  : t Dune_lang.Decoder.t
   end
@@ -711,6 +710,15 @@ module Sub_system_info = struct
 
   (* For parsing config files in the workspace *)
   let record_parser = ref return
+
+  module With_source = struct
+    type nonrec t =
+      { sub_system : t
+      ; input      : Dune_lang.Ast.t list
+      ; loc        : Loc.t
+      ; version    : Syntax.Version.t
+      }
+  end
 
   module Register(M : S) : sig end = struct
     open M
@@ -725,10 +733,20 @@ module Sub_system_info = struct
         let p = !record_parser in
         let name_s = Sub_system_name.to_string name in
         record_parser := (fun acc ->
-          field_o name_s parse >>= function
-          | None   -> p acc
-          | Some x ->
-            let acc = Sub_system_name.Map.add acc name (T x) in
+          field_o name_s
+            (let%map loc, input, x = with_original_input parse
+             and version = Syntax.get M.syntax
+             in
+             { With_source.
+               sub_system = T x
+             ; input
+             ; loc
+             ; version
+             })
+          >>= function
+          | None -> p acc
+          | Some t ->
+            let acc = Sub_system_name.Map.add acc name t in
             p acc)
   end
 
@@ -885,7 +903,7 @@ module Library = struct
     ; buildable                : Buildable.t
     ; dynlink                  : Dynlink_supported.t
     ; project                  : Dune_project.t
-    ; sub_systems              : Sub_system_info.t Sub_system_name.Map.t
+    ; sub_systems              : Sub_system_info.With_source.t Sub_system_name.Map.t
     ; no_keep_locs             : bool
     ; dune_version             : Syntax.Version.t
     ; virtual_modules          : Ordered_set_lang.t option

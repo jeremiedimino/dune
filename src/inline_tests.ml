@@ -12,17 +12,13 @@ module Backend = struct
       let name = Sub_system_name.make "inline_tests.backend"
 
       type t =
-        { loc              : Loc.t
-        ; runner_libraries : (Loc.t * Lib_name.t) list
+        { runner_libraries : (Loc.t * Lib_name.t) list
         ; flags            : Ordered_set_lang.Unexpanded.t
         ; generate_runner  : (Loc.t * Action_unexpanded.t) option
         ; extends          : (Loc.t * Lib_name.t) list
-        ; file_kind        : Stanza.File_kind.t
         }
 
       type Dune_file.Sub_system_info.t += T of t
-
-      let loc t = t.loc
 
       (* The syntax of the driver sub-system is part of the main dune
          syntax, so we simply don't create a new one.
@@ -36,19 +32,18 @@ module Backend = struct
 
       let parse =
         record
-          (let%map loc = loc
-           and runner_libraries = field "runner_libraries" (list (located Lib_name.decode)) ~default:[]
+          (let%map runner_libraries =
+             field "runner_libraries" (list (located Lib_name.decode))
+               ~default:[]
            and flags = Ordered_set_lang.Unexpanded.field "flags"
            and generate_runner = field_o "generate_runner" (located Action_dune_lang.decode)
            and extends = field "extends" (list (located Lib_name.decode)) ~default:[]
-           and file_kind = Stanza.file_kind ()
            in
            { loc
            ; runner_libraries
            ; flags
            ; generate_runner
            ; extends
-           ; file_kind
            })
     end
 
@@ -81,19 +76,6 @@ module Backend = struct
                        (desc ~plural:false))
             | Some t -> Ok t)
       }
-
-    let encode t =
-      let open Dune_lang.Encoder in
-      let lib x = Lib_name.encode (Lib.name x) in
-      let f x = Lib_name.encode (Lib.name x.lib) in
-      ((1, 0),
-       record_fields t.info.file_kind
-         [ field_l "runner_libraries" lib (Result.ok_exn t.runner_libraries)
-         ; field "flags" Ordered_set_lang.Unexpanded.encode t.info.flags
-         ; field_o "generate_runner" Action_dune_lang.encode
-             (Option.map t.info.generate_runner ~f:snd)
-         ; field_l "extends" f (Result.ok_exn t.extends)
-         ])
   end
   include M
   include Sub_system.Register_backend(M)
@@ -116,15 +98,13 @@ include Sub_system.Register_end_point(
 
       type Dune_file.Sub_system_info.t += T of t
 
-      let empty loc =
-        { loc
-        ; deps      = []
+      let empty =
+        { deps      = []
         ; flags     = Ordered_set_lang.Unexpanded.standard
         ; backend   = None
         ; libraries = []
         }
 
-      let loc      t = t.loc
       let backends t = Option.map t.backend ~f:(fun x -> [x])
 
       let syntax = Stanza.syntax
@@ -133,11 +113,10 @@ include Sub_system.Register_end_point(
 
       let parse =
         if_eos
-          ~then_:(loc >>| empty)
+          ~then_:(return empty)
           ~else_:
             (record
-               (let%map loc = loc
-                and deps = field "deps" (list Dep_conf.decode) ~default:[]
+               (let%map deps = field "deps" (list Dep_conf.decode) ~default:[]
                 and flags = Ordered_set_lang.Unexpanded.field "flags"
                 and backend = field_o "backend" (located Lib_name.decode)
                 and libraries = field "libraries" (list (located Lib_name.decode)) ~default:[]
@@ -262,7 +241,7 @@ include Sub_system.Register_end_point(
       in
 
       SC.add_alias_action sctx ~dir
-        ~loc:(Some info.loc)
+        ~loc
         (Build_system.Alias.runtest ~dir)
         ~stamp:("ppx-runner", name)
         (let module A = Action in

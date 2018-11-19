@@ -8,7 +8,6 @@ module Register_backend(M : Backend) = struct
   include Lib.Sub_system.Register(struct
       include M
       type Lib.Sub_system.t += T of t
-      let encode = Some encode
     end)
 
   let top_closure l ~deps =

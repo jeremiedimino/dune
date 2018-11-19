@@ -185,19 +185,6 @@ module Driver = struct
                        (desc ~plural:false))
             | Some t -> Ok t)
       }
-
-    let encode t =
-      let open Dune_lang.Encoder in
-      let f x = Lib_name.encode (Lib.name (Lazy.force x.lib)) in
-      ((1, 0),
-       record_fields t.info.file_kind
-         [ field "flags" Ordered_set_lang.Unexpanded.encode
-             t.info.flags
-         ; field "lint_flags" Ordered_set_lang.Unexpanded.encode
-             t.info.lint_flags
-         ; field "main" string t.info.main
-         ; field_l "replaces" f (Result.ok_exn t.replaces)
-         ])
   end
   include M
   include Sub_system.Register_backend(M)

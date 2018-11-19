@@ -177,7 +177,7 @@ module Encoder : sig
   (** Field with inlined list as value *)
   val field_l : string -> 'a t -> 'a list -> field
 
-  val record_fields : Syntax.t -> field list -> sexp list
+  val record_fields : field list -> sexp list
 
   val unknown : _ t
 end with type sexp := t
@@ -330,6 +330,9 @@ module Decoder : sig
 
   (** Ignore all the rest of the input *)
   val junk_everything : (unit, _) parser
+
+  (** Return the original input as well as the parsed values *)
+  val with_original_input : 'a t -> (Loc.t * ast list * 'a) t
 
   (** [plain_string f] expects the next element of the input to be a
       plain string, i.e. either an atom or a quoted string, but not a

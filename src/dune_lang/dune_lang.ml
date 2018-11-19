@@ -307,16 +307,13 @@ module Encoder = struct
     | [] -> Absent
     | _ -> Inlined_list (name, List.map l ~f)
 
-  let record_fields (syntax : Syntax.t) (l : field list) =
+  let record_fields (l : field list) =
     List.filter_map l ~f:(function
       | Absent -> None
       | Normal (name, v) ->
         Some (List [Atom (Atom.of_string name); v])
       | Inlined_list (name, l) ->
-        Some (List (Atom (Atom.of_string name) ::
-                    match syntax with
-                    | Dune -> l
-                    | Jbuild -> [List l])))
+        Some (List (Atom (Atom.of_string name) :: l)))
 
   let unknown _ = unsafe_atom_of_string "<unknown>"
 end
@@ -638,6 +635,27 @@ module Decoder = struct
   let located t ctx state1 =
     let x, state2 = t ctx state1 in
     ((loc_between_states ctx state1 state2, x), state2)
+
+  let with_original_input t (Values (loc, _, _) as ctx) l =
+    let x, rest = t ctx l in
+    let rec loop acc l =
+      if l == rest then
+        acc
+      else
+        match l with
+        | [] -> acc
+        | x :: l -> loop (x :: acc) l
+    in
+    let rev_parsed = loop [] l in
+    let parsed = List.rev rev_parsed in
+    let loc =
+      match parsed, rev_parsed with
+      | first :: _, last :: _ ->
+        { (Ast.loc first) with stop = (Ast.loc last).stop }
+      | _ ->
+        { loc with start = loc.stop }
+    in
+    ((loc, parsed, x), rest)
 
   let raw = next (fun x -> x)
 

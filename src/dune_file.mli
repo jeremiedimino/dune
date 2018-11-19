@@ -158,9 +158,6 @@ module Sub_system_info : sig
     (** Name of the sub-system *)
     val name : Sub_system_name.t
 
-    (** Location of the parameters in the jbuild/dune file. *)
-    val loc : t -> Loc.t
-
     (** Syntax for jbuild/dune files *)
     val syntax : Syntax.t
 
@@ -171,6 +168,15 @@ module Sub_system_info : sig
   module Register(M : S) : sig end
 
   val get : Sub_system_name.t -> (module S)
+
+  module With_source : sig
+    type nonrec t =
+      { sub_system : t
+      ; input      : Dune_lang.Ast.t list
+      ; loc        : Loc.t
+      ; version    : Syntax.Version.t
+      }
+  end
 end
 
 module Mode_conf : sig
@@ -249,7 +255,7 @@ module Library : sig
     ; buildable                : Buildable.t
     ; dynlink                  : Dynlink_supported.t
     ; project                  : Dune_project.t
-    ; sub_systems              : Sub_system_info.t Sub_system_name.Map.t
+    ; sub_systems              : Sub_system_info.With_source.t Sub_system_name.Map.t
     ; no_keep_locs             : bool
     ; dune_version             : Syntax.Version.t
     ; virtual_modules          : Ordered_set_lang.t option

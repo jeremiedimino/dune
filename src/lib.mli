@@ -312,7 +312,6 @@ module Sub_system : sig
       -> lib
       -> Info.t
       -> t
-    val encode : (t -> Syntax.Version.t * Dune_lang.t list) option
   end
 
   module Register(M : S) : sig
