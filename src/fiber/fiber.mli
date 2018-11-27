@@ -148,10 +148,10 @@ module Var : sig
   val create : unit -> 'a t
 
   (** [get var] is a fiber that reads the value of [var] *)
-  val get : 'a t -> 'a option fiber
+  val get : 'a t -> 'a option
 
   (** Same as [get] but raises if [var] is unset. *)
-  val get_exn : 'a t -> 'a fiber
+  val get_exn : 'a t -> 'a
 
   (** [set var value fiber] sets [var] to [value] during the execution
       of [fiber].
@@ -162,8 +162,23 @@ module Var : sig
         set v x (get_exn v >>| fun y -> x = y)
       ]}
  *)
-  val set : 'a t -> 'a -> 'b fiber -> 'b fiber
+  val set : 'a t -> 'a -> unit
 end with type 'a fiber := 'a t
+
+(** Create a sub-fiber with its own local storage. Variables set
+    inside [sub] will not affect the current fiber. i.e., the following
+    code returns 5:
+
+    {[
+      set v 5;
+      sub (fun () ->
+             set v 0;
+             return ())
+      >>= fun () ->
+      return (get v)
+    ]}
+*)
+val sub : (unit -> 'a t) -> 'a t
 
 (** {1 Error handling} *)
 

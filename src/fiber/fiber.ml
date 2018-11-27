@@ -9,8 +9,8 @@ module Execution_context : sig
   val add_refs : t -> int -> unit
   val deref : t -> unit
 
-  (* Create a new context with a new referebce count. [on_release] is called when the
-     context is no longer used. *)
+  (* Create a new context with a new reference count. [on_release] is
+     called when the context is no longer used. *)
   val create_sub
     :  t
     -> on_release:(unit -> unit)
@@ -88,27 +88,30 @@ end
 
 module EC = Execution_context
 
-type 'a t = Execution_context.t -> ('a -> unit) -> unit
+(* Current execution context *)
+let context = ref (EC.create_initial ())
 
-let return x _ k = k x
+type 'a t = ('a -> unit) -> unit
 
-let never _ _ = ()
+let return x k = k x
 
-let catch f ctx k =
+let never _ = ()
+
+let catch f k =
   try
-    f () ctx k
+    f () k
   with exn ->
-    EC.forward_error ctx exn
+    EC.forward_error !context exn
 
 module O = struct
-  let (>>>) a b ctx k =
-    a ctx (fun () -> b ctx k)
+  let (>>>) a b k =
+    a (fun () -> b k)
 
   let (>>=) t f ctx k =
-    t ctx (fun x -> f x ctx k)
+    t (fun x -> f x k)
 
-  let (>>|) t f ctx k =
-    t ctx (fun x -> k (f x))
+  let (>>|) t f k =
+    t fun x -> k (f x))
 end
 
 open O
@@ -133,12 +136,13 @@ type ('a, 'b) fork_and_join_state =
   | Got_a of 'a
   | Got_b of 'b
 
-let fork_and_join fa fb ctx k =
+let fork_and_join fa fb k =
   let state = ref Nothing_yet in
+  let ctx = !context in
   EC.add_refs ctx 1;
   begin
     try
-      fa () ctx (fun a ->
+      fa () (fun a ->
         match !state with
         | Nothing_yet -> EC.deref ctx; state := Got_a a
         | Got_a _ -> assert false
@@ -146,14 +150,15 @@ let fork_and_join fa fb ctx k =
     with exn ->
       EC.forward_error ctx exn
   end;
-  fb () ctx (fun b ->
+  fb () (fun b ->
     match !state with
     | Nothing_yet -> EC.deref ctx; state := Got_b b
     | Got_a a -> k (a, b)
     | Got_b _ -> assert false)
 
-let fork_and_join_unit fa fb ctx k =
+let fork_and_join_unit fa fb k =
   let state = ref Nothing_yet in
+  let ctx = !context in
   EC.add_refs ctx 1;
   begin
     try
@@ -165,7 +170,7 @@ let fork_and_join_unit fa fb ctx k =
     with exn ->
       EC.forward_error ctx exn
   end;
-  fb () ctx (fun b ->
+  fb () (fun b ->
     match !state with
     | Nothing_yet -> EC.deref ctx; state := Got_b b
     | Got_a () -> k b
@@ -184,18 +189,19 @@ let list_of_option_array =
   in
   fun a -> loop a (Array.length a) []
 
-let parallel_map l ~f ctx k =
+let parallel_map l ~f k =
   match l with
   | [] -> k []
-  | [x] -> f x ctx (fun x -> k [x])
+  | [x] -> f x (fun x -> k [x])
   | _ ->
+    let ctx = !context in
     let n = List.length l in
     EC.add_refs ctx (n - 1);
     let left_over = ref n in
     let results = Array.make n None in
     List.iteri l ~f:(fun i x ->
       try
-        f x ctx (fun y ->
+        f x (fun y ->
           results.(i) <- Some y;
           decr left_over;
           if !left_over = 0 then
@@ -210,6 +216,7 @@ let parallel_iter l ~f ctx k =
   | [] -> k ()
   | [x] -> f x ctx k
   | _ ->
+    let ctx = !context in
     let n = List.length l in
     EC.add_refs ctx (n - 1);
     let left_over = ref n in
@@ -226,10 +233,10 @@ let parallel_iter l ~f ctx k =
 module Var = struct
   include Univ_map.Key
 
-  let get     var ctx k = k (Univ_map.find     (EC.vars ctx) var)
-  let get_exn var ctx k = k (Univ_map.find_exn (EC.vars ctx) var)
+  let get     var k = k (Univ_map.find     (EC.vars !context) var)
+  let get_exn var k = k (Univ_map.find_exn (EC.vars !context) var)
 
-  let set var x fiber ctx k =
+  let set var x fiber k =
     let ctx = EC.set_vars ctx (Univ_map.add (EC.vars ctx) var x) in
     fiber ctx k
 
