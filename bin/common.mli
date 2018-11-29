@@ -41,3 +41,6 @@ val help_secs
 val footer : [> `Blocks of [> `P of string | `S of string ] list ]
 
 val term : t Cmdliner.Term.t
+
+(** Error indicating that two options are incompatible *)
+val incompatible : string -> string -> _ Cmdliner.Term.ret

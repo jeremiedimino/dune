@@ -229,6 +229,32 @@ let format_external_libs libs =
     | Required -> sprintf "- %s" (Lib_name.to_string name))
   |> String.concat ~sep:"\n"
 
+module External_lib_deps_mode = struct
+  type t =
+    | Normal
+    | Only_missing
+    | Opam_syntax
+
+  let arg =
+    Term.ret @@
+    let%map only_missing =
+      Arg.(value
+           & flag
+           & info ["missing"]
+               ~doc:{|Only print out missing dependencies|})
+    and opam_output =
+      Arg.(value
+           & flag
+           & info ["opam-syntax"]
+               ~doc:{|Print the result in opam-syntax|})
+    in
+    match only_missing, opam_output with
+    | false, false -> `Ok Normal
+    | true, false -> `Ok Only_missing
+    | false, true -> `Ok Opam_syntax
+    | true, true -> Common.incompatible "--missing" "--opam-syntax"
+end
+
 let external_lib_deps =
   let doc = "Print out external libraries needed to build the given targets." in
   let man =
@@ -241,11 +267,7 @@ let external_lib_deps =
   in
   let term =
     let%map common = Common.term
-    and only_missing =
-      Arg.(value
-           & flag
-           & info ["missing"]
-               ~doc:{|Only print out missing dependencies|})
+    and mode = External_lib_deps_mode.arg
     and targets =
       Arg.(non_empty
            & pos_all string []
@@ -273,7 +295,8 @@ let external_lib_deps =
             Lib_name.Map.filteri lib_deps ~f:(fun name _ ->
               not (Lib_name.Set.mem internals name))
           in
-          if only_missing then begin
+          match mode with
+          | Only_missing ->
             let context =
               List.find_exn setup.contexts ~f:(fun c -> c.name = context_name)
             in
@@ -312,14 +335,41 @@ let external_lib_deps =
                  |> String.concat ~sep:" ");
               true
             end
-          end else begin
+          | Normal ->
             Printf.printf
               "These are the external library dependencies in the %s context:\n\
                %s\n%!"
               context_name
               (format_external_libs externals);
             acc
-          end)
+          | Opam_syntax ->
+            let items =
+              let open OpamParserTypes in
+              let pos = ("", 0, 0) in
+              let depends, depopts =
+                Lib_name.Map.to_list externals
+                |> List.partition_map ~f:(fun (name, kind) ->
+                  let pkg = Lib_name.package_name name |> Package.Name.to_string in
+                  match (kind : Lib_deps_info.Kind.t) with
+                  | Required -> Left pkg
+                  | Optional -> Right pkg)
+              in
+              let item name deps =
+                let deps =
+                  String.Set.of_list deps
+                  |> String.Set.to_list
+                  |> List.map ~f:(fun name -> String (pos, name))
+                in
+                Variable (pos, name, List (pos, deps))
+              in
+              [ item "depends" depends
+              ; item "depopts" depopts
+              ]
+            in
+            if List.length setup.contexts > 1 then
+              Printf.printf "# Dependencies for context %s:\n" context_name;
+            Printf.printf "%s%!" (OpamPrinter.items items);
+            acc)
     in
     if failure then raise Already_reported
   in

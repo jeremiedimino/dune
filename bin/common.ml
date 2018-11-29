@@ -75,13 +75,13 @@ type config_file =
   | Default
   | This of Path.t
 
+let incompatible a b =
+  `Error (true,
+          sprintf
+            "Cannot use %s and %s simultaneously"
+            a b)
+
 let term =
-  let incompatible a b =
-    `Error (true,
-            sprintf
-              "Cannot use %s and %s simultaneously"
-              a b)
-  in
   let module Let_syntax = Cmdliner.Term in
   let module Term = Cmdliner.Term in
   let module Manpage = Cmdliner.Manpage in
