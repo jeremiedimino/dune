@@ -279,18 +279,17 @@ module Gen(P : Params) = struct
        >>>
        Build.write_file_dyn fn)
 
-  let init_binary_artifacts (package : Local_package.t) =
+  let init_binary_artifacts (package : Local_package.t) installs =
     let installs =
-      Local_package.installs package
-      |> List.concat_map
-           ~f:(fun ({ Dir_with_dune.
-                      data = { Install_conf. section; files; package = _ }
-                    ; ctx_dir = dir
-                    ; src_dir = _
-                    ; scope = _
-                    ; kind = _ }) ->
-                List.map files ~f:(fun {File_bindings. src; dst } ->
-                  Install.Entry.make section (Path.relative dir src) ?dst))
+      List.concat_map installs
+        ~f:(fun ({ Dir_with_dune.
+                   data = { Install_conf. section; files; package = _ }
+                 ; ctx_dir = dir
+                 ; src_dir = _
+                 ; scope = _
+                 ; kind = _ }) ->
+             List.map files ~f:(fun {File_bindings. src; dst } ->
+               Install.Entry.make section (Path.relative dir src) ?dst))
     in
     let install_paths = Local_package.install_paths package in
     let package = Local_package.name package in
@@ -340,10 +339,23 @@ module Gen(P : Params) = struct
       let install_file = Path.relative path install_fn in
       SC.add_alias_deps sctx install_alias (Path.Set.singleton install_file)
 
+  let packages = Local_package.of_sctx sctx
+  let artifacts_per_package =
+    Package.Name.Map.map packages ~f:(fun package ->
+      let bins, others =
+        Local_package.installs package
+        |> List.partition ~f:(
+          fun (entry : string Dune_file.Install_conf.t Dir_with_dune.t) ->
+            entry.Dir_with_dune.data.section = Bin)
+      in
+      (package, init_binary_artifacts package bins, others))
+
   let init () =
-    let packages = Local_package.of_sctx sctx in
     let artifacts_per_package =
-      Package.Name.Map.map packages ~f:init_binary_artifacts in
+      Package.Name.Map.map artifacts_per_package ~f:(
+        fun (package, bins, others) ->
+          bins @ init_binary_artifacts package others)
+    in
     Package.Name.Map.iter packages ~f:(fun pkg ->
       Local_package.name pkg
       |> Package.Name.Map.find artifacts_per_package
