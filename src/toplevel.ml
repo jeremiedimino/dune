@@ -86,8 +86,8 @@ let setup_module_rules t =
       Build.arr (fun () ->
         let include_dirs =
           let ctx = Super_context.context sctx in
-          Path.Set.to_list
-            (Lib.L.include_paths libs ~stdlib_dir:ctx.stdlib_dir)
+          Lib.L.include_dirs libs ~stdlib_dir:ctx.stdlib_dir
+          |> Include_dirs.get
         in
         let b = Buffer.create 64 in
         let fmt = Format.formatter_of_buffer b in

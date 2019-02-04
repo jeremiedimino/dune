@@ -290,47 +290,33 @@ end)
 module L = struct
   type nonrec t = t list
 
-  let to_iflags dirs =
-    Arg_spec.S
-      (Path.Set.fold dirs ~init:[] ~f:(fun dir acc ->
-         Arg_spec.Path dir :: A "-I" :: acc)
-       |> List.rev)
+  let empty_include_dirs ~stdlib_dir =
+    Include_dirs.empty ~implicit_dirs:(Path.Set.singleton stdlib_dir)
 
-  let include_paths ts ~stdlib_dir =
-    let dirs =
-      List.fold_left ts ~init:Path.Set.empty ~f:(fun acc t ->
-        List.fold_left ~f:Path.Set.add ~init:acc
+  let include_dirs ts ~stdlib_dir =
+    List.fold_left ts ~init:(empty_include_dirs ~stdlib_dir)
+      ~f:(fun acc t ->
+        List.fold_left ~f:Include_dirs.append ~init:acc
           [public_cmi_dir t ; native_dir t])
-    in
-    Path.Set.remove dirs stdlib_dir
 
-  let include_flags ts ~stdlib_dir =
-    to_iflags (include_paths ts ~stdlib_dir)
-
-  let c_include_paths ts ~stdlib_dir =
-    let dirs =
-      List.fold_left ts ~init:Path.Set.empty ~f:(fun acc t ->
-        Path.Set.add acc t.info.src_dir)
-    in
-    Path.Set.remove dirs stdlib_dir
-
-  let c_include_flags ts ~stdlib_dir =
-    to_iflags (c_include_paths ts ~stdlib_dir)
+  let c_include_dirs ts ~stdlib_dir =
+    List.fold_left ts ~init:(empty_include_dirs ~stdlib_dir) ~f:(fun acc t ->
+      Include_dirs.append acc t.info.src_dir)
 
   let link_flags ts ~mode ~stdlib_dir =
     Arg_spec.S
-      (c_include_flags ts ~stdlib_dir ::
+      (Include_dirs.to_iflags (c_include_dirs ts ~stdlib_dir) ::
        List.map ts ~f:(fun t ->
          Arg_spec.Deps (Mode.Dict.get t.info.archives mode)))
 
   let compile_and_link_flags ~compile ~link ~mode ~stdlib_dir =
     let dirs =
-      Path.Set.union
-        (  include_paths compile ~stdlib_dir)
-        (c_include_paths link    ~stdlib_dir)
+      Include_dirs.concat
+        (  include_dirs compile ~stdlib_dir)
+        (c_include_dirs link    ~stdlib_dir)
     in
     Arg_spec.S
-      (to_iflags dirs ::
+      (Include_dirs.to_iflags dirs ::
        List.map link ~f:(fun t ->
          Arg_spec.Deps (Mode.Dict.get t.info.archives mode)))
 
@@ -368,7 +354,7 @@ module Lib_and_module = struct
   let link_flags ts ~mode ~stdlib_dir =
     let libs = List.filter_map ts ~f:(function Lib lib -> Some lib | Module _ -> None) in
     Arg_spec.S
-      (L.c_include_flags libs ~stdlib_dir ::
+      (Include_dirs.to_iflags (L.c_include_dirs libs ~stdlib_dir) ::
        List.map ts ~f:(function
          | Lib t ->
            Arg_spec.Deps (Mode.Dict.get t.info.archives mode)

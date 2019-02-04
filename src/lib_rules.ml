@@ -281,7 +281,8 @@ module Gen (P : Install_rules.Params) = struct
       Arg_spec.S
         [ Hidden_deps h_files
         ; Arg_spec.of_result_map requires ~f:(fun libs ->
-            S [ Lib.L.c_include_flags libs ~stdlib_dir:ctx.stdlib_dir
+            S [ Lib.L.c_include_dirs libs ~stdlib_dir:ctx.stdlib_dir
+                |> Include_dirs.to_iflags
               ; Hidden_deps (Lib_file_deps.file_deps libs
                                ~groups:[Lib_file_deps.Group.Header])
               ])

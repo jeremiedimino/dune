@@ -115,6 +115,11 @@ unreleased
 - Configurator: Add `which` function to replace the `which` command line utility
   in a cross platform way. (#1773, fixes #1705, @Chris00)
 
+- Fix compatibility with OCaml 4.08: the order of `-I` now
+  matters. Previously, dune was sorting the directories
+  alphabetically, they should now be sorted by dependency order
+  (#..., fixes #1792, @diml)
+
 1.6.2 (05/12/2018)
 ------------------
 

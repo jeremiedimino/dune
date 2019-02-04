@@ -12,7 +12,8 @@ module Includes = struct
       Cm_kind.Dict.make_all (Arg_spec.Fail {fail = fun () -> raise exn})
     | Ok libs ->
       let iflags =
-        Lib.L.include_flags libs ~stdlib_dir:(SC.context sctx).stdlib_dir
+        Lib.L.include_dirs libs ~stdlib_dir:(SC.context sctx).stdlib_dir
+        |> Include_dirs.to_iflags
       in
       let cmi_includes =
         Arg_spec.S [ iflags
