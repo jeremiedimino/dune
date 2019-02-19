@@ -12,26 +12,39 @@ module Function_name = Interned.Make(struct
   end) ()
 
 module Function = struct
-  type ('a, 'b) t =
-    | Sync of ('a -> 'b)
-    | Async of ('a -> 'b Fiber.t)
+  module Kind = struct
+    type sync = Sync
+    type async = Async
+
+    type 'a t =
+      | Sync : sync t
+      | Async : async t
+  end
+
+  type ('a, 'b, 'k) t =
+    | Sync : ('a -> 'b) -> ('a, 'b, Kind.sync) t
+    | Async : ('a -> 'b Fiber.t) -> ('a, 'b, Kind.async) t
+
+  let kind : type a b k. (a, b, k) t -> k Kind.t = function
+    | Sync _ -> Kind.Sync
+    | Async _ -> Kind.Async
 end
 
 module Spec = struct
   type _ witness = ..
 
-  type ('a, 'b) t =
+  type ('a, 'b, 'kind) t =
     { name : Function_name.t
     ; allow_cutoff : bool
     ; input : (module Input with type t = 'a)
     ; output : (module Output with type t = 'b)
     ; decode : 'a Dune_lang.Decoder.t
     ; witness : 'a witness
-    ; f : ('a, 'b) Function.t
+    ; f : ('a, 'b, 'kind) Function.t
     ; doc : string
     }
 
-  type packed = T : (_, _) t -> packed [@@unboxed]
+  type packed = T : (_, _, _) t -> packed [@@unboxed]
 
   let by_name = Function_name.Table.create ~default_value:None
 
@@ -106,37 +119,33 @@ module M = struct
   end = State
 
   and Dag_node : sig
-    type t =
-      | Async of Dag.node
-      | Sync of Sync_dag_node.t
+    type 'k t =
+      | Sync : Sync_dag_node.t -> Function.Kind.sync t
+      | Async : Dag.node -> Function.Kind.async t
   end = Dag_node
 
   and Sync_dag_node : sig
     type t =
-      { mutable rev_deps : Sync_dag_node.t list
-      ; id : Id.t
-      ; 
+      { mutable deps : Dep_node.packed_sync list
       }
   end = Sync_dag_node
 
   and Dep_node : sig
-    type dag_node =
-      | Async of Dag.node
-      | Sync of sync
-
-    type ('a, 'b) t = {
-      spec : ('a, 'b) Spec.t;
+    type ('a, 'b, 'k) t = {
+      spec : ('a, 'b, 'k) Spec.t;
       input : 'a;
       id : Id.t;
-      mutable dag_node : Dag.node Lazy.t;
+      mutable dag_node : 'k Dag_node.t;
       mutable state : 'b State.t;
     }
 
-    type packed = T : (_, _) t -> packed [@@unboxed]
+    type packed = T : (_, _, _) t -> packed [@@unboxed]
+    type packed_sync =
+        T_sync : (_, _, Function.Kind.sync) t -> packed_sync [@@unboxed]
   end = Dep_node
 
   and Last_dep : sig
-    type t = T : ('a, 'b) Dep_node.t * 'b -> t
+    type t = T : ('a, 'b, 'k) Dep_node.t * 'b -> t
   end = Last_dep
 
   and Dag : Generic_dag.S with type value := Dep_node.packed
@@ -157,7 +166,7 @@ module Cached_value = struct
     ; calculated_at = Run.current ()
     }
 
-  let dep_changed (type a) (node : (_, a) Dep_node.t) prev_output curr_output =
+  let dep_changed (type a) (node : (_, a, _) Dep_node.t) prev_output curr_output =
     if node.spec.allow_cutoff then
       let (module Output : Output with type t = a) = node.spec.output in
       not (Output.equal prev_output curr_output)
@@ -243,11 +252,11 @@ module Cached_value = struct
     end
 end
 
-let ser_input (type a) (node : (a, _) Dep_node.t) =
+let ser_input (type a) (node : (a, _, _) Dep_node.t) =
   let (module Input : Input with type t = a) = node.spec.input in
   Input.to_sexp node.input
 
-let dag_node (dep_node : _ Dep_node.t) = Lazy.force dep_node.dag_node
+let dag_node (dep_node : _ Dep_node.t) = dep_node.dag_node
 
 module Stack_frame = struct
   open Dep_node
@@ -343,6 +352,9 @@ let add_rev_dep dep_node =
     ()
   | Some (Dep_node.T rev_dep) ->
     (* if the caller doesn't already contain this as a dependent *)
+    match rev_dep.dag_node with
+    | Sync _ -> assert false
+    | 
     let rev_dep = dag_node rev_dep in
     try
       if Dag.is_child rev_dep dep_node |> not then
@@ -352,6 +364,24 @@ let add_rev_dep dep_node =
         stack = Call_stack.get_call_stack ();
         cycle = List.map cycle ~f:(fun node -> node.Dag.data)
       })
+
+let add_sync_rev_dep dep_node =
+  match Call_stack.get_call_stack_tip () with
+  | None ->
+    ()
+  | Some (Dep_node.T rev_dep) ->
+    match rev_dep.dag_node with
+    | Sync n ->
+      n.deps <- dep_node :: n.deps
+    | Async { dag_node = rev_dep; _ } ->
+      try
+        if Dag.is_child rev_dep dep_node |> not then
+          Dag.add global_dep_dag rev_dep dep_node
+      with Dag.Cycle cycle ->
+        raise (Cycle_error.E {
+          stack = Call_stack.get_call_stack ();
+          cycle = List.map cycle ~f:(fun node -> node.Dag.data)
+        })
 
 let get_deps_from_graph_exn dep_node =
   Dag.children (dag_node dep_node)
