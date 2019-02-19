@@ -97,14 +97,33 @@ module M = struct
 
   and State : sig
     type 'a t =
-      (* [Running] includes computations that already terminated with an exception
-         or cancelled because we've advanced to the next run. *)
+      (* [Running] includes computations that already terminated with
+         an exception or cancelled because we've advanced to the next
+         run. *)
       | Running_sync of Run.t
       | Running_async of Run.t * 'a Fiber.Ivar.t
       | Done of 'a Cached_value.t
   end = State
 
+  and Dag_node : sig
+    type t =
+      | Async of Dag.node
+      | Sync of Sync_dag_node.t
+  end = Dag_node
+
+  and Sync_dag_node : sig
+    type t =
+      { mutable rev_deps : Sync_dag_node.t list
+      ; id : Id.t
+      ; 
+      }
+  end = Sync_dag_node
+
   and Dep_node : sig
+    type dag_node =
+      | Async of Dag.node
+      | Sync of sync
+
     type ('a, 'b) t = {
       spec : ('a, 'b) Spec.t;
       input : 'a;
@@ -146,6 +165,33 @@ module Cached_value = struct
       true
 
   (* Check if a cached value is up to date. If yes, return it *)
+  let rec get_sync : type a. a t -> a option = fun t ->
+    if Run.is_current t.calculated_at then
+      Some t.data
+    else begin
+      let dep_changed = function
+        | Last_dep.T (node, prev_output) ->
+          match node.state with
+          | Running_sync run ->
+            if Run.is_current run then Exn.code_error "Dependency cycle" [];
+            true
+          | Running_async _ ->
+            Exn.code_error
+              "Synchronous function depends on an asynchronous one."
+              []
+          | Done t' ->
+            get_sync t' |> function
+            | None -> true
+            | Some curr_output ->
+              dep_changed node prev_output curr_output
+      in
+      match List.exists ~f:dep_changed t.deps with
+      | true -> None
+      | false ->
+        t.calculated_at <- Run.current ();
+        Some t.data
+    end
+
   let rec get_async : type a. a t -> a option Fiber.t = fun t ->
     if Run.is_current t.calculated_at then
       Fiber.return (Some t.data)
@@ -156,7 +202,9 @@ module Cached_value = struct
         | Last_dep.T (node, prev_output) :: deps ->
           match node.state with
           | Running_sync _ ->
-            failwith "Synchronous function called [Cached_value.get_async]"
+            Exn.code_error
+              "Synchronous function called [Cached_value.get_async]"
+              []
           | Running_async (run, ivar) ->
             if not (Run.is_current run) then
               Fiber.return true
@@ -193,37 +241,6 @@ module Cached_value = struct
         t.calculated_at <- Run.current ();
         Some t.data
     end
-  and get_sync : type a. a t -> a option = fun t ->
-    if Run.is_current t.calculated_at then
-      Some t.data
-    else begin
-      let dep_changed = function
-        | Last_dep.T (node, prev_output) ->
-          match node.state with
-          | Running_sync run ->
-            if not (Run.is_current run)
-            then
-              true
-            else
-              failwith "dependency cycle: "
-          | Running_async _ ->
-            failwith
-              "Synchronous function depends on an asynchronous one. That is not allowed. \
-               (in fact this case should be unreachable)"
-          | Done t' ->
-            get_sync t' |> function
-            | None -> true
-            | Some curr_output ->
-              dep_changed node prev_output curr_output
-      in
-      match List.exists ~f:dep_changed t.deps with
-      | true -> None
-      | false ->
-        t.calculated_at <- Run.current ();
-        Some t.data
-    end
-
-
 end
 
 let ser_input (type a) (node : (a, _) Dep_node.t) =
@@ -262,26 +279,21 @@ module Cycle_error = struct
 end
 
 module type S = Memo_intf.S with type stack_frame := Stack_frame.t
-module type S_sync = Memo_intf.S_sync with type stack_frame := Stack_frame.t
 
 let global_dep_dag = Dag.create ()
 
-(* call stack consists of two components: asynchronous call stack managed with a fiber
-   context variable and synchronous call stack on top of that managed with an explicit ref *)
+(* call stack consists of two components: asynchronous call stack
+   managed with a fiber context variable and synchronous call stack on
+   top of that managed with an explicit ref *)
 module Call_stack = struct
 
   let synchronous_call_stack = ref []
-
-  let list_first = function
-    | [] -> None
-    | x :: _ -> Some x
 
   (* fiber context variable keys *)
   let call_stack_key = Fiber.Var.create ()
   let get_call_stack_tip () =
     match !synchronous_call_stack with
-    | [] ->
-      list_first (Fiber.Var.get call_stack_key |> Option.value ~default:[])
+    | [] -> Option.bind (Fiber.Var.get call_stack_key) ~f:List.hd_opt
     | tip :: _ -> Some tip
 
   let get_call_stack () =
@@ -294,22 +306,13 @@ module Call_stack = struct
     let stack = get_call_stack () in
     Fiber.Var.set call_stack_key (frame :: stack) f
 
-  let protect f ~finally = match f () with
-    | res ->
-      finally ();
-      res
-    | exception exn ->
-      finally ();
-      reraise exn
-
   let push_sync_frame frame f =
     let old = !synchronous_call_stack in
     let new_ = frame :: old in
     synchronous_call_stack := new_;
-    protect f ~finally:(fun () ->
-      assert ((==) !synchronous_call_stack new_);
+    Exn.protect f ~finally:(fun () ->
+      assert (!synchronous_call_stack == new_);
       synchronous_call_stack := old)
-
 end
 
 let pp_stack ppf () =
@@ -350,15 +353,6 @@ let add_rev_dep dep_node =
         cycle = List.map cycle ~f:(fun node -> node.Dag.data)
       })
 
-let get_deps (node : (_, _) Dep_node.t) =
-  match node with
-  |  { state = Running_async _; _ } -> None
-  |  { state = Running_sync _; _ } ->
-    None
-  |  { state = Done cv; _ } ->
-    Some (List.map cv.deps ~f:(fun (Last_dep.T (n,_u)) ->
-      (Function_name.to_string n.spec.name, ser_input n)))
-
 let get_deps_from_graph_exn dep_node =
   Dag.children (dag_node dep_node)
   |> List.map ~f:(fun { Dag.data = Dep_node.T node; _ } ->
@@ -367,130 +361,6 @@ let get_deps_from_graph_exn dep_node =
     | Running_async _ -> assert false
     | Done res ->
       Last_dep.T (node, res.data))
-
-module Make_gen_sync
-    (Visibility : Visibility)
-    (Input : Input)
-    (Decoder : Decoder with type t := Input.t)
-  : S_sync with type input := Input.t = struct
-  module Table = Hashtbl.Make(Input)
-
-  type 'a t =
-    { spec  : (Input.t, 'a) Spec.t
-    ; cache : (Input.t, 'a) Dep_node.t Table.t
-    }
-
-  type _ Spec.witness += W : Input.t Spec.witness
-
-
-  let get_deps t inp =
-    match Table.find t.cache inp with
-    | None -> None
-    | Some node -> get_deps node
-
-  let create name ?(allow_cutoff=true) ~doc output f =
-    let name = Function_name.make name in
-    let spec =
-      { Spec.
-        name
-      ; input = (module Input)
-      ; output
-      ; decode = Decoder.decode
-      ; allow_cutoff
-      ; witness = W
-      ; f = Sync f
-      ; doc
-      }
-    in
-    (match Visibility.visibility with
-     | Public -> Spec.register spec
-     | Private -> ());
-    { cache = Table.create 1024
-    ; spec
-    }
-
-  let compute t inp dep_node =
-    (* define the function to update / double check intermediate result *)
-    (* set context of computation then run it *)
-    let res = Call_stack.push_sync_frame (T dep_node) (fun () -> match t.spec.f with
-      | Sync f -> f inp
-      | Async _ -> failwith "expected a synchronous function, got an asynchronous one")
-    in
-    (* update the output cache with the correct value *)
-    let deps =
-      get_deps_from_graph_exn dep_node
-    in
-    dep_node.state <- Done (Cached_value.create res ~deps);
-    res
-
-  (* the computation that force computes the fiber *)
-  let recompute t inp (dep_node : _ Dep_node.t) =
-    (* create an ivar so other threads can wait for the computation to
-       finish *)
-    dep_node.state <- Running_sync (Run.current ());
-    compute t inp dep_node
-
-  let exec t inp =
-    match Table.find t.cache inp with
-    | None ->
-      let dep_node : _ Dep_node.t =
-        { id = Id.gen ()
-        ; input = inp
-        ; spec = t.spec
-        ; dag_node = lazy (assert false)
-        ; state = Running_sync (Run.current ())
-        }
-      in
-      let dag_node : Dag.node =
-        { info = Dag.create_node_info global_dep_dag
-        ; data = Dep_node.T dep_node
-        }
-      in
-      dep_node.dag_node <- lazy dag_node;
-      Table.add t.cache inp dep_node;
-      add_rev_dep dag_node;
-      compute t inp dep_node
-    | Some dep_node ->
-      add_rev_dep (dag_node dep_node);
-      match dep_node.state with
-      | Running_async _ ->
-        assert false
-      | Running_sync run ->
-        if Run.is_current run then
-          failwith "dependency cycle"
-        else
-          recompute t inp dep_node
-      | Done cv ->
-        Cached_value.get_sync cv |> function
-        | Some v -> v
-        | None -> recompute t inp dep_node
-
-  let peek t inp =
-    match Table.find t.cache inp with
-    | None -> None
-    | Some dep_node ->
-      add_rev_dep (dag_node dep_node);
-      match dep_node.state with
-      | Running_sync _ -> failwith "dependency cycle"
-      | Running_async _ -> assert false
-      | Done cv ->
-        if Run.is_current cv.calculated_at then
-          Some cv.data
-        else
-          None
-
-  let peek_exn t inp = Option.value_exn (peek t inp)
-
-  module Stack_frame = struct
-    let input (Dep_node.T dep_node) : Input.t option =
-      match dep_node.spec.witness with
-      | W -> Some dep_node.input
-      | _ -> None
-
-    let instance_of (Dep_node.T dep_node) ~of_ =
-      dep_node.spec.name = of_.spec.name
-  end
-end
 
 module Make_gen
     (Visibility : Visibility)
@@ -516,7 +386,7 @@ module Make_gen
       Some (List.map cv.deps ~f:(fun (Last_dep.T (n,_u)) ->
         (Function_name.to_string n.spec.name, ser_input n)))
 
-  let create_internal name ?(allow_cutoff=true) ~doc output f fdecl =
+  let create_spec name ?(allow_cutoff=true) ~doc output f =
     let name = Function_name.make name in
     let spec =
       { Spec.
@@ -526,13 +396,17 @@ module Make_gen
       ; decode = Decoder.decode
       ; allow_cutoff
       ; witness = W
-      ; f = Async f
+      ; f
       ; doc
       }
     in
     (match Visibility.visibility with
      | Public -> Spec.register spec
      | Private -> ());
+    spec
+
+  let create_internal name ?allow_cutoff ~doc output f fdecl =
+    let spec = create_spec name ?allow_cutoff ~doc output (Async f) in
     let cache = Table.create 1024 in
     Caches.register ~clear:(fun () -> Table.clear cache);
     { cache
@@ -637,13 +511,127 @@ module Make_gen
     let instance_of (Dep_node.T dep_node) ~of_ =
       dep_node.spec.name = of_.spec.name
   end
+
+  module Sync = struct
+    type 'a t =
+      { spec  : (Input.t, 'a) Spec.t
+      ; cache : (Input.t, 'a) Dep_node.t Table.t
+      ; mutable fdecl : (Input.t -> 'a) Fdecl.t option
+      }
+
+    let get_deps t inp =
+      match Table.find t.cache inp with
+      | None -> None
+      | Some node ->
+        match node.state with
+        |  Running_async _ | Running_sync _ -> None
+        |  Done cv ->
+          Some (List.map cv.deps ~f:(fun (Last_dep.T (n,_u)) ->
+            (Function_name.to_string n.spec.name, ser_input n)))
+
+    let create_internal name ?allow_cutoff ~doc output f fdecl =
+    let spec = create_spec name ?allow_cutoff ~doc output (Sync f) in
+    let cache = Table.create 1024 in
+    Caches.register ~clear:(fun () -> Table.clear cache);
+    { cache
+    ; spec
+    ; fdecl
+    }
+
+  let create name ?allow_cutoff ~doc output f =
+    create_internal name ?allow_cutoff ~doc output f None
+
+  let fcreate name ?allow_cutoff ~doc output =
+    let f = Fdecl.create () in
+    create_internal name ?allow_cutoff ~doc output (fun x -> Fdecl.get f x)
+      (Some f)
+
+    let set_impl t f =
+    match t.fdecl with
+      | None -> invalid_arg "Memo.set_impl"
+      | Some fdecl -> Fdecl.set fdecl f
+
+    let compute t inp dep_node =
+      (* define the function to update / double check intermediate result *)
+      (* set context of computation then run it *)
+      let res =
+        Call_stack.push_sync_frame (T dep_node) (fun () -> match t.spec.f with
+          | Sync f -> f inp
+          | Async _ ->
+            failwith "expected a synchronous function, got an asynchronous one")
+      in
+      (* update the output cache with the correct value *)
+      let deps =
+        get_deps_from_graph_exn dep_node
+      in
+      dep_node.state <- Done (Cached_value.create res ~deps);
+      res
+
+    (* the computation that force computes the fiber *)
+    let recompute t inp (dep_node : _ Dep_node.t) =
+      (* create an ivar so other threads can wait for the computation
+         to finish *)
+      dep_node.state <- Running_sync (Run.current ());
+      compute t inp dep_node
+
+    let exec t inp =
+      match Table.find t.cache inp with
+      | None ->
+        let dep_node : _ Dep_node.t =
+          { id = Id.gen ()
+          ; input = inp
+          ; spec = t.spec
+          ; dag_node = lazy (assert false)
+          ; state = Running_sync (Run.current ())
+          }
+        in
+        let dag_node : Dag.node =
+          { info = Dag.create_node_info global_dep_dag
+          ; data = Dep_node.T dep_node
+          }
+        in
+        dep_node.dag_node <- lazy dag_node;
+        Table.add t.cache inp dep_node;
+        add_rev_dep dag_node;
+        compute t inp dep_node
+      | Some dep_node ->
+        add_rev_dep (dag_node dep_node);
+        match dep_node.state with
+        | Running_async _ -> assert false
+        | Running_sync run ->
+          (* That would be a cycle, which should be detected by [add_rev_dep] *)
+          assert (not (Run.is_current run));
+          recompute t inp dep_node
+        | Done cv ->
+          Cached_value.get_sync cv |> function
+          | Some v -> v
+          | None -> recompute t inp dep_node
+
+    let peek t inp =
+      match Table.find t.cache inp with
+      | None -> None
+      | Some dep_node ->
+        add_rev_dep (dag_node dep_node);
+        match dep_node.state with
+        | Running_sync _ | Running_sync _ -> assert false
+        | Done cv ->
+          if Run.is_current cv.calculated_at then
+            Some cv.data
+          else
+            None
+
+    let peek_exn t inp = Option.value_exn (peek t inp)
+
+    module Stack_frame = struct
+      let input = Stack_frame.input
+
+      let instance_of (Dep_node.T dep_node) ~of_ =
+        dep_node.spec.name = of_.spec.name
+    end
 end
 
 module Make(Input : Input)(Decoder : Decoder with type t := Input.t) =
   Make_gen(Public)(Input)(Decoder)
-
-module Make_sync(Input : Input)(Decoder : Decoder with type t := Input.t) =
-  Make_gen_sync(Public)(Input)(Decoder)
 
 module Make_hidden(Input : Input) =
   Make_gen(Private)(Input)(struct

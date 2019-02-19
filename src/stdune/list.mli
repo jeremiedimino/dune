@@ -5,6 +5,8 @@ include module type of struct include ListLabels end
    type. *)
 type 'a t = 'a list
 
+val hd_opt : 'a t -> 'a option
+
 val is_empty : _ t -> bool
 
 val filter_map : 'a t -> f:('a -> 'b option) -> 'b t

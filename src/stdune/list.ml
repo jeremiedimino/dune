@@ -2,6 +2,10 @@ include ListLabels
 
 type 'a t = 'a list
 
+let hd_opt = function
+  | [] -> None
+  | x :: _ -> Some x
+
 let map ~f t = rev (rev_map ~f t)
 
 let is_empty = function
