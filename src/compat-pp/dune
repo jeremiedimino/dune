@@ -2,6 +2,8 @@
  (name pp)
  (libraries compiler-libs.common))
 
+(ocamllex let_trail)
+
 (install
  (section libexec)
  (files (pp.exe as compat-pp.exe)))
