@@ -1,0 +1,16 @@
+(executable
+ (name pp)
+ (libraries compiler-libs.common))
+
+(install
+ (section libexec)
+ (files (pp.exe as compat-pp.exe)))
+
+(rule
+ (with-stdout-to x (run ocaml which %{ocaml-versoin})))
+
+(rule
+ (copy# pp.%{x}.ml pp.ml))
+
+(rule
+ (with-stdout-to pp.nop.ml (echo "")))
