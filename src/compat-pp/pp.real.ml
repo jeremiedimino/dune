@@ -1,3 +1,5 @@
+open ListLabels
+
 let prog_name = Filename.basename Sys.executable_name
 
 let dump_ast = ref false
@@ -11,61 +13,90 @@ module Wrap_lexer = struct
     lexbuf.lex_start_p <- start;
     lexbuf.lex_curr_p <- curr
 
+  let encode_op tok op =
+    (match tok with
+     | LET -> "let__"
+     | AND -> "and__"
+     | _ -> assert false) ^ op
+
   let wrap (lexer : Lexing.lexbuf -> Parser.token) =
-    let lexbuf = ref None in
-    let stream =
-      Stream.from (fun _ ->
-        match !lexbuf with
-        | None -> assert false
-        | Some lexbuf ->
-          let tok = lexer lexbuf in
-          let loc = save_loc lexbuf in
-          Some (tok, loc))
-    in
     let pending = Queue.create () in
     let add x = Queue.push x pending in
-    let junk n =
-      for i = 1 to n do
-        Stream.junk stream
-      done
-    in
-    let feed () =
-      match Stream.npeek stream 3 with
-      | (LPAREN, loc1) :: (LET, loc2) :: (PLUS, loc3) :: _ ->
-        junk 3;
-        add (LPAREN, loc1);
-        add (LIDENT "let__plus", (fst loc2, snd loc3))
-      | (LPAREN, loc1) :: (AND, loc2) :: (PLUS, loc3) :: _ ->
-        junk 3;
-        add (LPAREN, loc1);
-        add (LIDENT "and__plus", (fst loc2, snd loc3))
-      | (LET, loc1) :: (PLUS, loc2) :: _ ->
-        junk 2;
-        add (LET, loc1);
-        add (LBRACKETAT, loc2);
-        add (LIDENT "+", loc2);
-        add (RBRACKET, loc2)
-      | (AND, loc1) :: (PLUS, loc2) :: _ ->
-        junk 2;
-        add (AND, loc1);
-        add (LBRACKETAT, loc2);
-        add (LIDENT "+", loc2);
-        add (RBRACKET, loc2)
-    in
-    let lexer lb =
-      (match !lexbuf with
-       | None -> lexbuf := Some lb
-       | Some x -> assert (x == lb));
-      if Queue.is_empty pending then feed ();
-      let tok, loc = Queue.pop pending in
-      restore_loc lb loc;
-      tok
-    in
-    lexbuf
+    fun lb ->
+      if not (Queue.is_empty pending) then begin
+        let tok, loc = Queue.pop pending in
+        restore_loc lb loc;
+        tok
+      end else
+        match lexer lb with
+        | LET | AND as tok ->
+          let loc = save_loc lb in
+          (match Let_trail.op lb with
+           | None -> ()
+           | Some op ->
+             let loc2 = save_loc lb in
+             let loc = (fst loc, snd loc2) in
+             add (LBRACKETAT, loc);
+             add (LIDENT ("!" ^ encode_op tok op), loc);
+             add (RBRACKET, loc));
+          restore_loc loc;
+          tok
+        | LPAREN -> begin
+            let loc1 = save_loc lb in
+            let tok2 = lexer lb in
+            let loc2 = save_loc lb in
+            add (tok, loc2);
+            (match tok with
+             | LET | AND -> begin
+                 match Let_trail.op lb with
+                 | None -> ()
+                 | Some op ->
+                   let loc3 = save_loc lb in
+                   match lexer lb with
+                   | RPAREN ->
+                     add (LIDENT (encode_op tok op), (fst loc2, snd loc3))
+                   | _ ->
+                     Location.raise_errorf
+                       ~loc:{ loc_ghost = false
+                            ; loc_start = fst loc4
+                            ; loc_end = snd loc4
+                            }
+                       "')' expected"
+               end
+             | _ -> ());
+            restore_loc lb loc1;
+            LPAREN
+          end
 end
 
 module Map_ast = struct
+  open Ast_mapper
+  open Asttypes
+  open Parsetree
 
+  let extract_op vb =
+    match
+      List.find vb.pvb_attributes ~f:(function
+        | ({ txt; _ }, PStr []) when txt <> "" && txt.[0] = '!' -> true
+        | _ -> false)
+    with
+    | ({ txt; loc }, _) ->
+      let len = String.length txt in
+      Some (loc, String.sub txt ~pos:1 ~len:(len - 1))
+    | exception Not_found ->
+      None
+
+  let mapper =
+    let super = default_mapper in
+    let map_expression self expr =
+      let 
+      match expr.pexp_desc with
+      | Pexp_let (Nonrec, vb :: vbs, body) -> begin
+        match extract_op vb with
+    let mapper =
+      { super with expression =
+                     
+    
 end
 
 let process_file fn ~magic ~parse ~print =
