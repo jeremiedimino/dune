@@ -6,6 +6,8 @@ module Make(Key : Comparable.S) : S with type key = Key.t = struct
       let compare a b = Ordering.to_int (Key.compare a b)
     end)
 
+  let compare_key = Key.compare
+
   include struct
     [@@@warning "-32"]
 

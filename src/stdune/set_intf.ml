@@ -1,6 +1,7 @@
 module type S = sig
-  type elt
-  and t
+  type elt and t
+
+  val compare_elt : elt -> elt -> Ordering.t
 
   val empty          : t
   val is_empty       : t -> bool

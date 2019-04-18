@@ -1,6 +1,8 @@
 module type S = sig
   type key
   and (+'a) t
+  val compare_key : key -> key -> Ordering.t
+
   val empty     : 'a t
   val is_empty  : 'a t -> bool
   val mem       : 'a t -> key -> bool
