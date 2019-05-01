@@ -57,8 +57,9 @@ module Make(Rules : sig
       {
         by_child =
           String.Map.union x.by_child y.by_child
-            ~f:(fun _key data1 data2 ->
-              Some (Memo.Lazy.map2 data1 data2 ~f:(fun x y -> union ~union_rules x y)));
+            ~f:(fun _key data1 data2 -> Some (
+              Memo.Lazy.map2 data1 data2
+                ~f:(fun x y -> union ~union_rules x y)));
         rules_here =
           Memo.Lazy.map2 x.rules_here y.rules_here ~f:union_rules
       }
@@ -75,9 +76,9 @@ module Make(Rules : sig
         by_child =
           (match Dir_set.Children.default dirs.children with
            | true ->
-             (* This is forcing the lazy potentially too early if the directory the user
-                is interested in is not actually in the set.
-                We're not fully committed to supporting this case though, anyway. *)
+             (* This is forcing the lazy potentially too early if the directory
+                the user is interested in is not actually in the set.  We're not
+                fully committed to supporting this case though, anyway. *)
              String.Map.mapi (Memo.Lazy.force t).by_child
                ~f:(fun dir v ->
                  Memo.lazy_ (fun () ->
@@ -90,7 +91,8 @@ module Make(Rules : sig
                  Memo.lazy_ (fun () ->
                    restrict
                      v
-                     (Memo.lazy_ (fun () -> descend (Memo.Lazy.force t) dir)))));
+                     (Memo.lazy_ (fun () ->
+                        descend (Memo.Lazy.force t) dir)))));
       }
 
     let singleton path (rules : Rules.t) =
@@ -122,16 +124,17 @@ module Make(Rules : sig
         && not (Dir_set.is_subset (Dir_set.negate paths) ~of_:env)
       then
         raise (Exn.code_error
-                 "inner [Approximate] specifies a set such that neither it, nor its \
-                  negation, are a subset of directories specified by the outer \
-                  [Approximate]."
+                 "inner [Approximate] specifies a set such that neither it, \
+                  nor its negation, are a subset of directories specified by \
+                  the outer [Approximate]."
                  [
                    "inner", (Dir_set.to_sexp paths);
                    "outer", (Dir_set.to_sexp env);
                  ])
       else
         let paths = Dir_set.intersect paths env in
-        Evaluated.restrict paths (Memo.lazy_ (fun () -> evaluate ~env:paths rules))
+        Evaluated.restrict paths
+          (Memo.lazy_ (fun () -> evaluate ~env:paths rules))
     | Finite rules -> Evaluated.finite rules
     | Thunk f -> evaluate ~env (f ())
 

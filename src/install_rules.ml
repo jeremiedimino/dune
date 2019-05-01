@@ -317,7 +317,9 @@ let install_file sctx (package : Local_package.t) entries =
     List.map ~f:snd entries, List.map ~f:fst entries
   in
   let files = Install.files entries in
-  let target_alias = Build_system.Alias.package_install ~context:ctx ~pkg:package_name in
+  let target_alias =
+    Build_system.Alias.package_install ~context:ctx ~pkg:package_name
+  in
   let () =
     Rules.dir_rule (
       Alias.dir target_alias, (fun () ->
@@ -429,7 +431,8 @@ let init_install_files (ctx : Context.t) (package : Local_package.t) =
     let install_alias = Alias.install ~dir:path in
     let install_file = Path.relative path install_fn in
     Rules.dir_rule (path, (fun () ->
-      Build_system.Alias.add_deps install_alias (Path.Set.singleton install_file)))
+      Build_system.Alias.add_deps
+        install_alias (Path.Set.singleton install_file)))
 
 module Result =struct
 

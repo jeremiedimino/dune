@@ -17,9 +17,8 @@ module Gen : sig
     (* calls [print] every time any code embedded in the [Scheme] runs, be it
        a [Thunk] constructor or an [Approximation] function.
 
-       The argument of [print] identifies which thunk got run (the path to that thunk
-       within the [Scheme.t] value).
-    *)
+       The argument of [print] identifies which thunk got run (the path to that
+       thunk within the [Scheme.t] value).  *)
     val instrument : print:(string -> unit) -> 'a Gen.t -> 'a Gen.t
   end
 end
