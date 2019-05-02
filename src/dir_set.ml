@@ -183,7 +183,7 @@ let rec mem t dir = match dir with
     | Some t ->
       mem t rest
 
-let mem t dir = mem t (Path.explode_after_build_dir_exn dir)
+let mem t dir = mem t (Path.Build.explode dir)
 
 let descend t child =
   let children = children t in
@@ -202,7 +202,7 @@ let of_subtree_gen subtree =
           Children.create ~default:false
             ~exceptions:(String.Map.singleton component (loop rest)))
   in
-  fun path -> loop (Path.explode_after_build_dir_exn path)
+  fun path -> loop (Path.Build.explode path)
 
 let just_the_root =
   create
@@ -218,8 +218,8 @@ let of_individual_dirs paths =
   |> union_all
 
 type element =
-  | One_dir of Path.t
-  | Subtree of Path.t
+  | One_dir of Path.Build.t
+  | Subtree of Path.Build.t
 
 let of_list list =
   List.map list ~f:(function

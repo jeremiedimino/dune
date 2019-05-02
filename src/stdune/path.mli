@@ -175,8 +175,6 @@ val drop_optional_build_context_src_exn : t -> Source.t
     [sandbox_dir]. *)
 val sandbox_managed_paths : sandbox_dir:t -> t -> t
 
-val explode_after_build_dir_exn : t -> string list
-
 val explode : t -> string list option
 val explode_exn : t -> string list
 
@@ -185,6 +183,7 @@ val build_dir : t
 
 (** [is_in_build_dir t = is_descendant t ~of:build_dir] *)
 val is_in_build_dir : t -> bool
+val as_in_build_dir_exn : t -> Build.t
 
 (** [is_in_build_dir t = is_managed t && not (is_in_build_dir t)] *)
 val is_in_source_tree : t -> bool
@@ -223,6 +222,7 @@ val ensure_build_dir_exists : unit -> unit
 val set_build_dir : Kind.t -> unit
 
 val source : Source.t -> t
+val build : Build.t -> t
 
 (** paths guaranteed to be in the source directory *)
 val in_source : string -> t

@@ -3,11 +3,12 @@ open! Stdune
 type rule = unit -> unit
 
 module T = struct
-  type t = rule Path.Map.t
+  type t = rule Path.Build.Map.t
 
-  let empty = Path.Map.empty
+  let empty = Path.Build.Map.empty
 
-  let union_map a b ~f = Path.Map.union a b ~f:(fun _key a b -> Some (f a b))
+  let union_map a b ~f =
+    Path.Build.Map.union a b ~f:(fun _key a b -> Some (f a b))
 
   let union =
     union_map ~f:(fun rule1 rule2 -> fun () -> rule1 (); rule2 ())
@@ -18,10 +19,12 @@ end
 include T
 
 let file_rule ~rule:(dst, rule) =
-  Path.Map.singleton (Path.parent_exn dst) rule
+  let dst = Path.as_in_build_dir_exn dst in
+  Path.Build.Map.singleton (Path.Build.parent_exn dst) rule
 
 let dir_rule (dir, rule) =
-  Path.Map.singleton dir rule
+  let dir = Path.as_in_build_dir_exn dir in
+  Path.Build.Map.singleton dir rule
 
 let implicit_output = Memo.Implicit_output.add(module T)
 

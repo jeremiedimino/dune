@@ -5,7 +5,7 @@ module Gen = struct
     | Empty
     | Union of 'rules t * 'rules t
     | Approximation of Dir_set.t * 'rules t
-    | Finite of 'rules Path.Map.t
+    | Finite of 'rules Path.Build.Map.t
     | Thunk of (unit -> 'rules t)
 end
 
@@ -17,7 +17,7 @@ module type S = sig
     | Empty
     | Union of 'rules t_gen * 'rules t_gen
     | Approximation of Dir_set.t * 'rules t_gen
-    | Finite of 'rules Path.Map.t
+    | Finite of 'rules Path.Build.Map.t
     | Thunk of (unit -> 'rules t_gen)
 
   type t = dir_rules t_gen
@@ -27,12 +27,12 @@ module type S = sig
   end
 
   module For_tests : sig
-    val collect_rules_simple : t -> dir:Path.t -> dir_rules
+    val collect_rules_simple : t -> dir:Path.Build.t -> dir_rules
   end
 
   val evaluate : t -> Evaluated.t
 
-  val get_rules : Evaluated.t -> dir:Path.t -> dir_rules
+  val get_rules : Evaluated.t -> dir:Path.Build.t -> dir_rules
 
   val all : t list -> t
 end

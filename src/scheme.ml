@@ -2,13 +2,7 @@ open! Stdune
 
 open Scheme_intf
 
-module Path = struct
-  type t = Path.t
-
-  module Set = Path.Set
-  module Map = Path.Map
-  let explode = Path.explode_after_build_dir_exn
-end
+module Path = Path.Build
 
 module Gen' = struct
   include Gen

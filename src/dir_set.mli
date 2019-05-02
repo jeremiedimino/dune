@@ -30,18 +30,16 @@ val universal : t
 val is_empty : t -> bool
 val is_universal : t -> bool
 
-val mem : t -> Path.t -> bool
+val mem : t -> Path.Build.t -> bool
 
 val descend : t -> string -> t
 
-(** paths must be in build directory *)
-
-val of_subtrees : Path.t list -> t
-val of_individual_dirs : Path.t list -> t
+val of_subtrees : Path.Build.t list -> t
+val of_individual_dirs : Path.Build.t list -> t
 
 type element =
-  | One_dir of Path.t
-  | Subtree of Path.t
+  | One_dir of Path.Build.t
+  | Subtree of Path.Build.t
 
 val of_list : element list -> t
 

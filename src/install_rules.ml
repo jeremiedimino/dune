@@ -481,9 +481,10 @@ let memo =
            Approximation (
              (Dir_set.of_list
                 [
-                  Subtree (Config.local_install_dir ~context:context_name);
-                  One_dir (Local_package.build_dir pkg);
-                  One_dir ctx.build_dir
+                  Subtree (Path.as_in_build_dir_exn (
+                    Config.local_install_dir ~context:context_name));
+                  One_dir (Path.as_in_build_dir_exn (Local_package.build_dir pkg));
+                  One_dir (Path.as_in_build_dir_exn ctx.build_dir)
                 ])
              ,
              Thunk (fun () -> Scheme.Finite (

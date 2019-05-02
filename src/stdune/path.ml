@@ -916,13 +916,12 @@ let split_first_component t =
     end
   | _, _ -> None
 
-let explode_after_build_dir_exn t = match t with
+let as_in_build_dir_exn t = match t with
   | External _ | In_source_tree _  ->
     Exn.code_error
-      "[explode_after_build_dir] called on something not in build dir" ["t", to_sexp t]
-  | In_build_dir p when Local.is_root p -> []
-  | In_build_dir p ->
-    String.split (Local.to_string p) ~on:'/'
+      "[as_in_build_dir_exn] called on something not in build dir"
+      ["t", to_sexp t]
+  | In_build_dir p -> p
 
 let explode t =
   match kind t with
@@ -1097,6 +1096,7 @@ end
 
 let in_source s = in_source_tree (Local.of_string s)
 let source s = in_source_tree s
+let build s = in_build_dir s
 
 let is_suffix p ~suffix =
   match p with

@@ -30,11 +30,10 @@ end
 
 module Dir_set = Dune.Dir_set
 
-let () =
-  Path.set_build_dir (Path.Kind.of_string "build-dir")
-
 module Path = struct
-  let of_string str = Path.L.relative Path.build_dir (
+  include Path.Build
+
+  let of_string str = L.relative root (
     match String.split str ~on:'/' with
     | [""] -> []
     | ["."] -> []
