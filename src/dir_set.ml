@@ -2,14 +2,15 @@ open! Stdune
 
 module T : sig
 
-  type t = private
+  type t =
     | Empty
     | Universal
-    | Nontrivial of
-        {
-          here : bool;
-          children : children;
-        }
+    | Nontrivial of nontrivial
+  and
+    nontrivial = private {
+    here : bool;
+    children : children;
+  }
   and
     children = private {
     default : bool;
@@ -19,8 +20,6 @@ module T : sig
   val create : here:bool -> children:children -> t
   val create_children : default:bool -> exceptions:t String.Map.t -> children
 
-  val trivial : bool -> t
-
   val is_empty : t -> bool
   val is_universal : t -> bool
 
@@ -29,11 +28,12 @@ end = struct
   type t =
     | Empty
     | Universal
-    | Nontrivial of
-        {
-          here : bool;
-          children : children;
-        }
+    | Nontrivial of nontrivial
+  and
+    nontrivial = {
+    here : bool;
+    children : children;
+  }
   and
     children = {
     default : bool;
@@ -73,16 +73,12 @@ end = struct
           ~f:(fun v -> not (is_trivial ~value:default v));
     }
 
-  let trivial v = match v with
-    | true -> Universal
-    | false -> Empty
-
 end
 
 include T
 
-let empty = trivial false
-let universal = trivial true
+let empty = Empty
+let universal = Universal
 
 let empty_children =
   create_children ~default:false ~exceptions:String.Map.empty
