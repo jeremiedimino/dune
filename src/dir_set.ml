@@ -1,109 +1,75 @@
 open! Stdune
 
-module T : sig
+type t =
+  | Empty
+  | Universal
+  | Nontrivial of nontrivial
+and
+  nontrivial = {
+  here : bool;
+  children : children;
+}
+and
+  children = {
+  default : bool;
+  exceptions : t String.Map.t;
+}
 
-  type t =
-    | Empty
-    | Universal
-    | Nontrivial of nontrivial
-  and
-    nontrivial = private {
-    here : bool;
-    children : children;
-  }
-  and
-    children = private {
-    default : bool;
-    exceptions : t String.Map.t;
-  }
+let trivial = function
+  | false -> Empty
+  | true -> Universal
 
-  val create : here:bool -> children:children -> t
-  val create_children : default:bool -> exceptions:t String.Map.t -> children
+let create ~here ~children =
+  if String.Map.is_empty children.exceptions && here = children.default then
+    trivial here
+  else
+    Nontrivial { here; children }
 
-  val is_empty : t -> bool
-  val is_universal : t -> bool
+let is_empty = function
+  | Empty -> true
+  | _ -> false
 
-end = struct
+let is_universal = function
+  | Universal -> true
+  | _ -> false
 
-  type t =
-    | Empty
-    | Universal
-    | Nontrivial of nontrivial
-  and
-    nontrivial = {
-    here : bool;
-    children : children;
-  }
-  and
-    children = {
-    default : bool;
-    exceptions : t String.Map.t;
-  }
-
-  let is_universal ~here ~children =
-    String.Map.is_empty children.exceptions && here && children.default
-
-  let is_empty ~here ~children =
-    String.Map.is_empty children.exceptions
-    && not here && not children.default
-
-  let create ~here ~children =
-    if is_empty ~here ~children then Empty
-    else
-    if is_universal ~here ~children then Universal
-    else
-      Nontrivial { here; children }
-
-  let is_empty = function
-    | Empty -> true
-    | _ -> false
-
-  let is_universal = function
-    | Universal -> true
-    | _ -> false
-
-  let is_trivial ~value t = match value with
-    | false -> is_empty t
-    | true -> is_universal t
-
-  let create_children ~default ~exceptions =
-    { default;
-      exceptions =
-        String.Map.filter exceptions
-          ~f:(fun v -> not (is_trivial ~value:default v));
-    }
-
-end
-
-include T
+let is_trivial ~value t =
+  match value, t with
+  | false, Empty | true, Universal -> true
+  | _ -> false
 
 let empty = Empty
 let universal = Universal
 
 let empty_children =
-  create_children ~default:false ~exceptions:String.Map.empty
+  { default = false
+  ; exceptions = String.Map.empty
+  }
 let universal_children =
-  create_children ~default:true ~exceptions:String.Map.empty
-
-let trivial v = match v with
-  | false -> empty
-  | true -> universal
+  { default = true
+  ; exceptions = String.Map.empty
+  }
 
 module Children = struct
-
-  type set = T.t
-
-  type t = T.children = private {
+  type nonrec t = children = private {
     default : bool;
-    exceptions : T.t String.Map.t;
+    exceptions : t String.Map.t;
   }
 
   let exceptions t = t.exceptions
   let default t = t.default
-
-  let create = create_children
-
 end
+
+let merge_children a b ~f =
+  let default = a.default || b.default in
+  { default
+  ; exceptions =
+      String.Map.merge a.exceptions b.exceptions ~f:(fun _ x y ->
+        let x = Option.value x ~default:(trivial a.default) in
+        let y = Option.value y ~default:(trivial b.default) in
+        let res = f x y in
+        Option.some_if (not (is_trivial ~value:default res)) res)
+  }
 
 let rec union x y =
   match x, y with
@@ -113,19 +79,7 @@ let rec union x y =
   | Nontrivial x, Nontrivial y ->
     create
       ~here:(x.here || y.here)
-      ~children:(union_children x.children y.children)
-and
-  union_children x y =
-  create_children
-    ~default:(x.default || y.default)
-    ~exceptions:(
-      String.Map.merge
-        x.exceptions
-        y.exceptions
-        ~f:(fun _key vx vy ->
-          let vx = Option.value vx ~default:(trivial x.default) in
-          let vy = Option.value vy ~default:(trivial y.default) in
-          Some (union vx vy)))
+      ~children:(merge_children x.children y.children ~f:union)
 
 let rec intersect x y =
   match x, y with
@@ -135,30 +89,19 @@ let rec intersect x y =
   | Nontrivial x, Nontrivial y ->
     create
       ~here:(x.here && y.here)
-      ~children:(intersect_children x.children y.children)
-and
-  intersect_children x y =
-  create_children
-    ~default:(x.default && y.default)
-    ~exceptions:(
-      String.Map.merge
-        x.exceptions
-        y.exceptions
-        ~f:(fun _key vx vy ->
-          let vx = Option.value vx ~default:(trivial x.default) in
-          let vy = Option.value vy ~default:(trivial y.default) in
-          Some (intersect vx vy)))
+      ~children:(merge_children x.children y.children ~f:intersect)
 
 let rec negate x =
   match x with
   | Universal -> empty
   | Empty -> universal
-  | Nontrivial { here; children } ->
-    create ~here:(not here)
-      ~children:(
-        Children.create
-          ~default:(not children.default)
-          ~exceptions:(String.Map.map children.exceptions ~f:(negate)))
+  | Nontrivial { here; children = { default; exceptions } } ->
+    Nontrivial { here = not here
+               ; children =
+                   { default = not default
+                   ; exceptions = String.Map.map exceptions ~f:negate
+                   }
+               }
 
 let here = function
   | Empty -> false
@@ -193,17 +136,21 @@ let of_subtree_gen subtree =
   let rec loop = function
     | [] -> subtree
     | component :: rest ->
-      create ~here:false
-        ~children:(
-          Children.create ~default:false
-            ~exceptions:(String.Map.singleton component (loop rest)))
+      Nontrivial
+        { here = false
+        ; children =
+            { default = false
+            ; exceptions = String.Map.singleton component (loop rest)
+            }
+        }
   in
   fun path -> loop (Path.Build.explode path)
 
 let just_the_root =
-  create
-    ~here:true
-    ~children:(Children.create ~default:false ~exceptions:String.Map.empty)
+  Nontrivial
+    { here = true
+    ; children = empty_children
+    }
 
 let of_subtrees paths =
   List.map paths ~f:(of_subtree_gen universal)

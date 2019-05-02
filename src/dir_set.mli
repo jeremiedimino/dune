@@ -3,8 +3,6 @@ open! Stdune
 (** Represents a (potentially infinite) set of directories. Not any set can be specified,
     only ones that can be efficiently inspected. *)
 
-type children
-
 type t
 
 (* Total mapping from the child basename to a [t].
@@ -13,13 +11,11 @@ type t
    The "trivial" ones will be either all [trivial true] or all [trivial false]. *)
 module Children : sig
   type set = t
-  type t = children
+  type t
 
   val default : t -> bool
   val exceptions : t -> set String.Map.t
-
-  val create : default:bool -> exceptions:set String.Map.t -> t
-end
+end with type set := t
 
 val here : t -> bool
 val children : t -> Children.t
