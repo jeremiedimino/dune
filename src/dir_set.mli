@@ -5,10 +5,7 @@ open! Stdune
 
 type children
 
-type t = {
-  here : bool;
-  children : children;
-}
+type t
 
 (* Total mapping from the child basename to a [t].
    Only a finite number of bindings can be non-trivial.
@@ -24,8 +21,14 @@ module Children : sig
   val create : default:bool -> exceptions:set String.Map.t -> t
 end
 
+val here : t -> bool
+val children : t -> Children.t
+
 val empty : t
 val universal : t
+
+val is_empty : t -> bool
+val is_universal : t -> bool
 
 val mem : t -> Path.t -> bool
 
