@@ -61,3 +61,34 @@ Fatal error with opam file that is not listed in the dune-project file:
   your dune-project file, you must a (package ...) stanza for each opam package
   in your project.
   [1]
+
+Check that the version is preserved when it is only written in the
+opam files. This happens in tarball created by dune-release, or after
+a `dune subst`.
+
+  $ mkdir preserve-version
+
+  $ cat > preserve-version/dune-project <<EOF
+  > (lang dune 1.10)
+  > (name foo)
+  > (generate_opam_files)
+  > (package
+  >  (name foo))
+  > EOF
+
+  $ cat > preserve-version/foo.opam <<EOF
+  > version: "1.0"
+  > EOF
+
+  $ cat > preserve-version/dune <<EOF
+  > (library (name foo))
+  > EOF
+
+  $ dune build --root preserve-version foo.opam META.foo
+  Entering directory 'preserve-version'
+
+  $ grep ^version preserve-version/foo.opam
+  [1]
+
+  $ grep ^version preserve-version/_build/default/META.foo
+  [1]
