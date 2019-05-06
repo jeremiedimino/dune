@@ -14,6 +14,9 @@ exception Already_reported
 (** Raise a [Exn.Fatal_error] exception *)
 val die : ('a, Format.formatter, unit, 'b) format4 -> 'a
 
+(** Same as [die] but doesn't include the [Error:] prefix *)
+val fatalf : ('a, Format.formatter, unit, 'b) format4 -> 'a
+
 (**/**)
 (* Referenced in Ansi_color and Report_error *)
 val err_buf : Buffer.t

@@ -177,18 +177,18 @@ let get_name ~files ?name () =
         None)
   in
   if package_names = [] then
-    die "@{<error>Error@}: no <package>.opam files found.";
+    die "no <package>.opam files found.";
   let (loc, name) =
     match Wp.t with
     | Dune -> begin
         assert (Option.is_none name);
         if not (List.mem ~set:files Dune_project.filename) then
-          die "@{<error>Error@}: There is no dune-project file in the current \
+          die "There is no dune-project file in the current \
                directory, please add one with a (name <name>) field in it.\n\
                Hint: dune subst must be executed from the root of the project.";
         match read_project_name () with
         | None ->
-          die "@{<error>Error@}: The project name is not defined, please add \
+          die "The project name is not defined, please add \
                a (name <name>) field to your dune-project file."
         | Some name -> name
       end
@@ -220,12 +220,12 @@ let get_name ~files ?name () =
           match name with
           | Some name -> (Loc.none, name)
           | None ->
-            die "@{<error>Error@}: cannot determine name automatically.\n\
+            die "cannot determine name automatically.\n\
                  You must pass a [--name] command line argument."
   in
   if not (List.mem name ~set:package_names) then begin
     if Loc.is_none loc then
-      die "@{<error>Error@}: file %s.opam doesn't exist." name
+      die "file %s.opam doesn't exist." name
     else
       Errors.fail loc
         "file %s.opam doesn't exist. \

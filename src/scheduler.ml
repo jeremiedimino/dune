@@ -217,7 +217,7 @@ end = struct
              "--event"; "Updated";
              "--event"; "Removed"] @ excludes
          | None ->
-           die "@{<error>Error@}: fswatch (or inotifywait) was not found. \
+           die "fswatch (or inotifywait) was not found. \
                 One of them needs to be installed for watch mode to work.\n"))
 
   let buffering_time = 0.5 (* seconds *)

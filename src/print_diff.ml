@@ -17,7 +17,7 @@ let print ?(skip_trailing_cr=Sys.win32) path1 path2 =
   let loc = Loc.in_file file1 in
   let (file1, file2) = Path.(to_string file1, to_string file2) in
   let fallback () =
-    die "%aFiles %s and %s differ." Errors.print loc
+    Errors.fail loc "Files %s and %s differ."
       (Path.to_string_maybe_quoted path1)
       (Path.to_string_maybe_quoted path2)
   in

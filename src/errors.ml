@@ -18,7 +18,10 @@ let kerrf fmt ~f =
     err_ppf fmt
 
 let die fmt =
-  kerrf fmt ~f:(fun s -> raise (Exn.Fatal_error s))
+  kerrf ("@{<error>Error@}: " ^^ fmt)
+    ~f:(fun s -> raise (Exn.Fatal_error s))
+
+let fatalf fmt = Exn.fatalf
 
 let exnf t fmt =
   Format.pp_open_box err_ppf 0;

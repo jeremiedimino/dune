@@ -143,7 +143,7 @@ let rec exec t ~ectx ~dir ~env ~stdout_to ~stderr_to =
           }
       end;
       if mode = Binary then
-        die "@{<error>Error@}: Files %s and %s differ."
+        die "Files %s and %s differ."
           (Path.to_string_maybe_quoted file1)
           (Path.to_string_maybe_quoted file2)
       else

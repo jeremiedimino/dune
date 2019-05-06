@@ -122,7 +122,7 @@ module Config = struct
     let path = Path.extend_basename path ~suffix:".d" in
     let conf_file = Path.relative path (toolchain ^ ".conf") in
     if not (Path.exists conf_file) then
-      die "@{<error>Error@}: ocamlfind toolchain %s isn't defined in %a \
+      die "ocamlfind toolchain %s isn't defined in %a \
            (context: %s)" toolchain Path.pp path context;
     let vars = (Meta.load ~name:None conf_file).vars in
     { vars = String.Map.map vars ~f:Rules.of_meta_rules

@@ -141,7 +141,7 @@ let program_not_found ?context ?hint ~loc prog =
     hint
 
 let library_not_found ?context ?hint lib =
-  die "@{<error>Error@}: Library %s not found%s%a" (String.maybe_quoted lib)
+  die "Library %s not found%s%a" (String.maybe_quoted lib)
     (match context with
      | None -> ""
      | Some name -> sprintf " (context: %s)" name)

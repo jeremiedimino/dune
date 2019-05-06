@@ -547,7 +547,7 @@ let opam_version =
           try
             Scanf.sscanf version "%d.%d.%d" (fun a b c -> a, b, c)
           with _ ->
-            die "@{<error>Error@}: `%a config --version' \
+            die "`%a config --version' \
                  returned invalid output:\n%s"
               Path.pp opam version)
       in

@@ -38,7 +38,7 @@ let run ~lib_deps ~by_dir ~setup ~only_missing ~sexp =
       in
       if only_missing then begin
         if by_dir || sexp then
-          die "@{<error>Error@}: --only-missing cannot be used with \
+          die "--only-missing cannot be used with \
                --unstable-by-dir or --sexp";
         let context =
           List.find_exn setup.workspace.contexts
@@ -81,7 +81,7 @@ let run ~lib_deps ~by_dir ~setup ~only_missing ~sexp =
         end
       end else if sexp then begin
         if not by_dir then
-          die "@{<error>Error@}: --sexp requires --unstable-by-dir";
+          die "--sexp requires --unstable-by-dir";
         let lib_deps_by_dir =
           lib_deps_by_dir
           |> Path.Source.Map.map ~f:(Lib_name.Map.filteri ~f:is_external)
@@ -98,7 +98,7 @@ let run ~lib_deps ~by_dir ~setup ~only_missing ~sexp =
         acc
       end else begin
         if by_dir then
-          die "@{<error>Error@}: --unstable-by-dir cannot be used without --sexp";
+          die "--unstable-by-dir cannot be used without --sexp";
         Printf.printf
           "These are the external library dependencies in the %s context:\n\
            %s\n%!"

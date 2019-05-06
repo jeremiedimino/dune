@@ -205,7 +205,7 @@ end
       let* () =
         Process.run Strict ~dir:(Path.source dir) ~env:context.env context.ocaml args in
       if not (Path.exists generated_dune_file) then
-        die "@{<error>Error:@} %s failed to produce a valid dune_file file.\n\
+        die "%s failed to produce a valid dune_file file.\n\
              Did you forgot to call [Jbuild_plugin.V*.send]?"
           (Path.Source.to_string file);
       Fiber.return
