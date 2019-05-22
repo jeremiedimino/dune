@@ -9,42 +9,6 @@ let alias_dir = Path.(relative build_dir) ".aliases"
 
 let () = Hooks.End_of_build.always Memo.reset
 
-module Fs : sig
-  val mkdir_p : Path.Build.t -> unit
-  val mkdir_p_or_check_exists : loc:Loc.t option -> Path.t -> unit
-end = struct
-  let mkdir_p_def =
-    Memo.create
-      "mkdir_p"
-      ~doc:"mkdir_p"
-      ~input:(module Path.Build)
-      ~output:(Simple (module Unit))
-      ~visibility:Hidden
-      Sync
-      (Some (fun p -> Path.mkdir_p (Path.build p)))
-
-  let mkdir_p = Memo.exec mkdir_p_def
-
-  let assert_exists_def =
-    Memo.create
-      "mkdir_p"
-      ~doc:"mkdir_p"
-      ~input:(module Path)
-      ~output:(Simple (module Bool))
-      ~visibility:Hidden
-      Sync
-      (Some Path.exists)
-
-  let assert_exists ~loc path =
-    if not (Memo.exec assert_exists_def path) then
-      Errors.fail_opt loc "%a does not exist" Path.pp path
-
-  let mkdir_p_or_check_exists ~loc path =
-    match Path.as_in_build_dir path with
-    | None -> assert_exists ~loc path
-    | Some path -> mkdir_p path
-end
-
 module Promoted_to_delete : sig
   val add : Path.t -> unit
   val load : unit -> Path.Set.t
@@ -1237,7 +1201,6 @@ let () =
     in
     start_rule t rule;
     let* (action, deps) = evaluate_rule_and_wait_for_dependencies rule in
-    Fs.mkdir_p (Path.as_in_build_dir_exn dir);
     let targets_as_list  = Path.Set.to_list targets  in
     let head_target = List.hd targets_as_list in
     let prev_trace = Trace.get head_target in
@@ -1293,18 +1256,12 @@ let () =
             Path.rm_rf (Path.build sandbox_dir);
             let sandboxed path = Path.sandbox_managed_paths ~sandbox_dir path in
             Dep.Set.dirs deps
-            |> Path.Set.iter ~f:(fun p ->
-              sandboxed p
-              |> Fs.mkdir_p_or_check_exists ~loc);
-            Fs.mkdir_p_or_check_exists ~loc (sandboxed dir);
             Action.sandbox action
               ~sandboxed
               ~deps
               ~targets:targets_as_list
               ~eval_pred
         in
-        let chdirs = Action.chdirs action in
-        Path.Set.iter chdirs ~f:Fs.(mkdir_p_or_check_exists ~loc);
         let+ () =
           with_locks locks ~f:(fun () ->
             Action_exec.exec ~context ~env ~targets action)

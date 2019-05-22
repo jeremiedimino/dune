@@ -192,17 +192,6 @@ let fold_one_step t ~init:acc ~f =
 
 include Make_mapper(Ast)(Ast)
 
-let chdirs =
-  let rec loop acc t =
-    let acc =
-      match t with
-      | Chdir (dir, _) -> Path.Set.add acc dir
-      | _ -> acc
-    in
-    fold_one_step t ~init:acc ~f:loop
-  in
-  fun t -> loop Path.Set.empty t
-
 let symlink_managed_paths sandboxed deps ~eval_pred =
   let steps =
     Path.Set.fold (Dep.Set.paths deps ~eval_pred)
