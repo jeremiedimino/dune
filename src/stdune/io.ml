@@ -58,6 +58,7 @@ end
 module Make (Path : sig
     type t
     val to_string : t -> string
+    val auto_mkdir_p_for_build_dirs : (string -> 'a) -> t -> 'a
   end) = struct
 
   type path = Path.t
@@ -67,8 +68,16 @@ module Make (Path : sig
     if binary then P.open_in_bin fn else P.open_in fn
 
   let open_out ?(binary=true) p =
-    let fn = Path.to_string p in
-    if binary then P.open_out_bin fn else P.open_out fn
+    let oc =
+      Path.auto_mkdir_p_for_build_dirs
+        (fun fn ->
+           Unix.openfile fn
+             [O_WRONLY; O_CREAT; O_TRUNC] 0o666)
+        p
+      |> Unix.out_channel_of_descr
+    in
+    if not binary then set_binary_mode_out oc false;
+    oc
 
   let with_file_in ?binary fn ~f =
     Exn.protectx (open_in ?binary fn) ~finally:close_in ~f
@@ -156,10 +165,12 @@ module Make (Path : sig
   let copy_file ?(chmod=Fn.id) ~src ~dst () =
     with_file_in src ~f:(fun ic ->
       let perm = (Unix.fstat (Unix.descr_of_in_channel ic)).st_perm |> chmod in
-      Exn.protectx (P.open_out_gen
-                      [Open_wronly; Open_creat; Open_trunc; Open_binary]
-                      perm
-                      (Path.to_string dst))
+      Exn.protectx
+        (Path.auto_mkdir_p_for_build_dirs
+           (P.open_out_gen
+              [Open_wronly; Open_creat; Open_trunc; Open_binary]
+              perm)
+           dst)
         ~finally:close_out
         ~f:(fun oc ->
           copy_channels ic oc))
@@ -195,4 +206,5 @@ include Make(Path)
 module String_path = Make(struct
     type t = string
     let to_string x = x
+    let auto_mkdir_p_for_build_dirs f x = f x
   end)

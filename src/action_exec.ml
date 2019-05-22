@@ -67,16 +67,16 @@ let rec exec t ~ectx ~dir ~env ~stdout_to ~stderr_to =
         | None -> Path.to_string src
         | Some from -> Path.reach ~from src
       in
-      let dst = Path.to_string dst in
-      match Unix.readlink dst with
+      let dst_s = Path.to_string dst in
+      match Unix.readlink dst_s with
       | target ->
         if target <> src then begin
           (* @@DRA Win32 remove read-only attribute needed when symlinking enabled *)
-          Unix.unlink dst;
-          Unix.symlink src dst
+          Unix.unlink dst_s;
+          Unix.symlink src dst_s
         end
       | exception _ ->
-        Unix.symlink src dst
+        Path.auto_mkdir_p_for_build_dirs (Unix.symlink src) dst
     end;
     Fiber.return ()
   | Copy_and_add_line_directive (src, dst) ->
@@ -102,7 +102,7 @@ let rec exec t ~ectx ~dir ~env ~stdout_to ~stderr_to =
     Io.write_file fn s;
     Fiber.return ()
   | Rename (src, dst) ->
-    Unix.rename (Path.to_string src) (Path.to_string dst);
+    Path.auto_mkdir_p_for_build_dirs (Unix.rename (Path.to_string src)) dst;
     Fiber.return ()
   | Remove_tree path ->
     Path.rm_rf path;

@@ -607,10 +607,6 @@ module Kind = struct
     | Local t -> Local (Local.relative ?error_loc t fn)
     | External t -> External (External.relative t fn)
 
-  let mkdir_p = function
-    | Local t -> Local.mkdir_p t
-    | External t -> External.mkdir_p t
-
   let append_relative x y =
     match x with
     | Local x -> Local (Local.append x y)
@@ -1071,21 +1067,27 @@ let unlink_no_err t = try unlink t with _ -> ()
 
 let build_dir_exists () = is_directory build_dir
 
-let auto_mkdir_p_for_build_dirs t ~f =
-  match t with
-  | In_source_tree _ | External _ ->
-    f t
+let mkdir_p = function
+  | External s -> External.mkdir_p s
+  | In_source_tree s ->
+    Local.mkdir_p s
   | In_build_dir p ->
+    match Lazy.force build_dir_kind with
+    | Local b -> Local.mkdir_p (Local.append b p)
+    | External b ->
+      Build.mkdir_p_in_external_build_dir p
+        ~external_build_dir:(External.to_string b)
+
+let auto_mkdir_p_for_build_dirs f t =
+  let t_s = to_string t in
+  if not (is_in_build_dir t) then
+    f t_s
+  else
     try
-      f t
+      f t_s
     with Unix.Unix_error (ENOENT, _, _) ->
-      begin match Lazy.force build_dir_kind with
-      | Local b -> Local.mkdir_p (Local.append b p)
-      | External b ->
-        Build.mkdir_p_in_external_build_dir p
-          ~external_build_dir:(External.to_string b)
-      end;
-      f t
+      mkdir_p (parent_exn t);
+      f t_s
 
 let extend_basename t ~suffix =
   match t with
@@ -1125,13 +1127,6 @@ let rm_rf =
     match Unix.lstat fn with
     | exception Unix.Unix_error(ENOENT, _, _) -> ()
     | _ -> loop fn
-
-let mkdir_p = function
-  | External s -> External.mkdir_p s
-  | In_source_tree s ->
-    Local.mkdir_p s
-  | In_build_dir k ->
-    Kind.mkdir_p (Kind.append_relative (Lazy.force build_dir_kind) k)
 
 let compare x y =
   match x, y with
