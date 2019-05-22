@@ -63,9 +63,6 @@ end
 (** Convert the action to a format suitable for printing *)
 val for_shell : t -> For_shell.t
 
-(** Return the list of directories the action chdirs to *)
-val chdirs : t -> Path.Set.t
-
 (** Ast where programs are not yet looked up in the PATH *)
 module Unresolved : sig
   type action = t

@@ -514,7 +514,8 @@ type t =
 let log t = t.log
 
 let with_chdir t ~dir ~f =
-  Sys.chdir (Path.to_string dir);
+  Path.auto_mkdir_p_for_build_dirs dir ~f:(fun p ->
+    Unix.chdir (Path.to_string p));
   protectx () ~finally:(fun () -> Sys.chdir t.original_cwd) ~f
 
 let t_var : t Fiber.Var.t = Fiber.Var.create ()

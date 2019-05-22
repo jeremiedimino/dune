@@ -13,8 +13,10 @@ type t = real option
 let no_log = None
 
 let create ?(display=Config.default.display) () =
-  Path.ensure_build_dir_exists ();
-  let oc = Io.open_out (Path.relative Path.build_dir "log") in
+  let oc =
+    Path.auto_mkdir_p_for_build_dirs (Path.relative Path.build_dir "log")
+      ~f:Io.open_out
+  in
   Printf.fprintf oc "# %s\n# OCAMLPARAM: %s\n%!"
     (String.concat (List.map (Array.to_list Sys.argv) ~f:quote_for_shell) ~sep:" ")
     (match Env.get Env.initial "OCAMLPARAM" with

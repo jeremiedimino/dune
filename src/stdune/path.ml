@@ -524,6 +524,31 @@ module Build = struct
   let append_source = append
   let append_relative = append
   let append_local = append
+
+  let rec mkdir_p_in_external_build_dir ~external_build_dir t =
+    if is_root t then
+      ()
+    else
+      let t_s = Filename.concat external_build_dir (to_string t) in
+      try
+        Unix.mkdir t_s 0o777
+      with
+      | Unix.Unix_error (EEXIST, _, _) -> ()
+      | Unix.Unix_error (ENOENT, _, _) ->
+        let parent = parent_exn t in
+        if not (is_root parent) then begin
+          mkdir_p_in_external_build_dir ~external_build_dir parent;
+          Unix.mkdir t_s 0o777
+        end else begin
+          try
+            Unix.mkdir external_build_dir 0o777
+          with
+          | Unix.Unix_error (EEXIST, _, _) -> ()
+          | Unix.Unix_error (ENOENT, _, _) ->
+            Exn.fatalf "Cannot create external build directory %s. \
+                        Make sure that the parent dir %s exists."
+              external_build_dir (Filename.dirname external_build_dir)
+        end
 end
 module Local = Relative
 module Source0 = Relative
@@ -1046,19 +1071,21 @@ let unlink_no_err t = try unlink t with _ -> ()
 
 let build_dir_exists () = is_directory build_dir
 
-let ensure_build_dir_exists () =
-  match kind build_dir with
-  | Local p -> Local.mkdir_p p
-  | External p ->
-    let p = External.to_string p in
+let auto_mkdir_p_for_build_dirs t ~f =
+  match t with
+  | In_source_tree _ | External _ ->
+    f t
+  | In_build_dir p ->
     try
-      Unix.mkdir p 0o777
-    with
-    | Unix.Unix_error (EEXIST, _, _) -> ()
-    | Unix.Unix_error (ENOENT, _, _) ->
-      Exn.fatalf "Cannot create external build directory %s. \
-                  Make sure that the parent dir %s exists."
-        p (Filename.dirname p)
+      f t
+    with Unix.Unix_error (ENOENT, _, _) ->
+      begin match Lazy.force build_dir_kind with
+      | Local b -> Local.mkdir_p (Local.append b p)
+      | External b ->
+        Build.mkdir_p_in_external_build_dir p
+          ~external_build_dir:(External.to_string b)
+      end;
+      f t
 
 let extend_basename t ~suffix =
   match t with

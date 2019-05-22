@@ -1247,7 +1247,6 @@ let () =
       if force || something_changed then begin
         List.iter targets_as_list ~f:Path.unlink_no_err;
         pending_targets := Path.Set.union targets !pending_targets;
-        let loc = Rule.Info.loc info in
         let action =
           match sandbox_dir with
           | None ->
@@ -1255,7 +1254,6 @@ let () =
           | Some sandbox_dir ->
             Path.rm_rf (Path.build sandbox_dir);
             let sandboxed path = Path.sandbox_managed_paths ~sandbox_dir path in
-            Dep.Set.dirs deps
             Action.sandbox action
               ~sandboxed
               ~deps

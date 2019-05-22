@@ -167,29 +167,6 @@ module Unresolved = struct
         | Search (loc, s) -> Ok (f loc s))
 end
 
-let fold_one_step t ~init:acc ~f =
-  match t with
-  | Chdir (_, t)
-  | Setenv (_, _, t)
-  | Redirect (_, _, t)
-  | Ignore (_, t) -> f acc t
-  | Progn l -> List.fold_left l ~init:acc ~f
-  | Run _
-  | Echo _
-  | Cat _
-  | Copy _
-  | Symlink _
-  | Copy_and_add_line_directive _
-  | System _
-  | Bash _
-  | Write_file _
-  | Rename _
-  | Remove_tree _
-  | Mkdir _
-  | Digest_files _
-  | Diff _
-  | Merge_files_into _ -> acc
-
 include Make_mapper(Ast)(Ast)
 
 let symlink_managed_paths sandboxed deps ~eval_pred =

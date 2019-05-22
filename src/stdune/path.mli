@@ -206,12 +206,15 @@ val unlink_no_err : t -> unit
 val rm_rf : t -> unit
 val mkdir_p : t -> unit
 
+(** [auto_mkdir_p_for_build_dirs path f] runs [f path] and if it
+    produce an [ENOENT] error and [path] is a build directory, then
+    make the [path] directory and try one more time. *)
+val auto_mkdir_p_for_build_dirs : t -> f:(t -> 'a) -> 'a
+
 val pp_in_source : Format.formatter -> t -> unit
 val pp_debug : Format.formatter -> t -> unit
 
 val build_dir_exists : unit -> bool
-
-val ensure_build_dir_exists : unit -> unit
 
 (** set the build directory. Can only be called once and must be done before
     paths are converted to strings elsewhere. *)
