@@ -841,6 +841,7 @@ module Library = struct
     module T = struct
       type t =
         | Findlib_dynload
+        | Dune_build_info
       let compare = compare
     end
 
@@ -848,14 +849,18 @@ module Library = struct
     module Map = Map.Make(T)
 
     let decode =
-      enum
-        [ "findlib_dynload", Findlib_dynload
+      sum
+        [ "findlib_dynload", return Findlib_dynload
+        ; "dune_build_info",
+          (let+ () = Syntax.since Stanza.syntax (1, 11) in
+           Dune_build_info)
         ]
 
     let encode t =
       Dune_lang.atom
         (match t with
-         | Findlib_dynload -> "findlib_dynload")
+         | Findlib_dynload -> "findlib_dynload"
+         | Dune_build_info -> "dune_build_info")
   end
 
   module Stdlib = struct
