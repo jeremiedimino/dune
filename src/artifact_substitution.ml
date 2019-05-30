@@ -56,7 +56,7 @@ module Value = struct
     | Vcs_describe p ->
       Sexp.Encoder.constr "Vcs_describe" [Path.Source.to_sexp p]
     | Repeat (n, s) ->
-      Sexp.Encoder.constr "Repeat" [Int.sexp_of_t n; Atom s]
+      Sexp.Encoder.constr "Repeat" [Sexp.Encoder.int n; Atom s]
 end
 
 type t =
@@ -87,35 +87,35 @@ let encode { mode; value } =
        | Repeat (n, s) ->
          sprintf "repeat:%d:%d:%s" n (String.length s) s)
   in
+  let partial_len = prefix_len + String.length suffix in
+  let partial_len =
+    match mode with
+    | Binary n -> max n partial_len
+    | Text -> partial_len
+  in
   let len =
-    let partial_len = prefix_len + String.length suffix in
     let partial_len_str = string_of_int partial_len in
     let len = partial_len + String.length partial_len_str in
-    if String.length (string_of_int len) > partial_len_str then
-      len + 1
-    else
+    if String.length (string_of_int len) = String.length partial_len_str then
       len
+    else
+      len + 1
   in
-  let full_len =
-    match mode with
-    | Binary n -> max n len
-    | Text -> len
-  in
-  if full_len < 0 || full_len > max_len then
+  if len < 0 || len > max_len then
     Exn.code_error
       "Artifact_substitution.encode: length is too large"
       [ "t", to_sexp { mode; value }
-      ; "full_len", Sexp.Encoder.int full_len
+      ; "len", Sexp.Encoder.int len
       ];
-  let s =
-    sprintf "%s%u%s%s" prefix full_len suffix
-      (String.make (full_len - len) '%')
-  in
-  assert (String.length s = full_len);
+  let s = sprintf "%s%u%s" prefix len suffix in
+  let s = s ^ String.make (len - String.length s) '%' in
+  assert (String.length s = len);
   s
 
 let eval ft t =
   match t.value with
+  | Repeat (n, s) ->
+    Fiber.return (Array.make n s |> Array.to_list |> String.concat ~sep:"")
   | Vcs_describe p ->
     match File_tree.Dir.vcs (File_tree.nearest_dir ft p) with
     | None -> Fiber.return "<no-vcs-info>"
@@ -141,7 +141,7 @@ let decode s =
       | _ -> fail ()
     in
     if dune_placeholder <> "DUNE_PLACEHOLDER" then fail ();
-    if parsE_int len_str <> len then fail ();
+    if parse_int len_str <> len then fail ();
     let mode =
       match mode_str with
       | "t" -> Mode.Text
@@ -176,8 +176,8 @@ module Copy_and_substitute = struct
   let buf = Bytes.create buf_len
 
   type copier =
-    { ic : in_channel
-    ; oc : out_channel
+    { input : (Bytes.t -> int -> int -> int)
+    ; output : (Bytes.t -> int -> int -> unit)
     }
 
   type potential_placeholder =
@@ -259,14 +259,14 @@ module Copy_and_substitute = struct
      functions.
   *)
   let refill copier ~placeholder_start ~end_of_data =
-    if placeholder_start > 0 then output copier.oc buf 0 placeholder_start;
+    if placeholder_start > 0 then copier.output buf 0 placeholder_start;
     let leftover = end_of_data - placeholder_start in
     if leftover > 0 then
       Bytes.blit ~src:buf ~dst:buf ~src_pos:placeholder_start ~dst_pos:0
         ~len:leftover;
-    match input copier.ic buf leftover (buf_len - leftover) with
+    match copier.input buf leftover (buf_len - leftover) with
     | 0 ->
-      output copier.oc buf 0 leftover;
+      copier.output buf 0 leftover;
       0
     | n ->
       leftover + n
@@ -416,8 +416,8 @@ module Copy_and_substitute = struct
       match decode placeholder with
       | Some t ->
         let* v = eval ft t in
-        output copier.oc 0 placeholder_start;
-        output_string copier.oc (Mode.encode_substitution t.mode v);
+        output copier.output 0 placeholder_start;
+        output_string copier.output (Mode.encode_substitution t.mode v);
         loop ft copier
           ~pos:(placeholder_start + String.length placeholder)
           ~end_of_data
@@ -428,8 +428,11 @@ module Copy_and_substitute = struct
           ~pos:(placeholder_start + prefix_len)
           ~end_of_data
 
-  let run ft ic oc = loop ft { ic; oc } ~pos:0 ~end_of_data:0
+  let run ft copier = loop ft copier ~pos:0 ~end_of_data:0
 end
+
+let copy ~file_tree ~input ~output () =
+  Copy_and_substitute.run file_tree { input; output }
 
 let copy_file ~file_tree ?(chmod=Fn.id) ~src ~dst () =
   Io.with_file_in src ~f:(fun ic ->
@@ -439,4 +442,5 @@ let copy_file ~file_tree ?(chmod=Fn.id) ~src ~dst () =
                     perm
                     (Path.to_string dst))
       ~finally:close_out
-      ~f:(fun oc -> Copy_and_substitute.run file_tree ic oc))
+      ~f:(fun oc ->
+        copy ~file_tree ~input:(input ic) ~output:(output oc) () ))

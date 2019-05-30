@@ -13,6 +13,10 @@ module Mode : sig
         exactly the same length.  The replacement starts with a null
         character followed by a 16 bits length in big endian and then
         the value.  The rest of the space is padded with null bytes. *)
+
+  (** Produce the string that would replace the placeholder with the
+      given value .*)
+  val encode_substitution : t -> string -> string
 end
 
 (** A symbolic representation of the value to substitute to *)
@@ -43,5 +47,16 @@ val copy_file
   -> ?chmod:(int -> int)
   -> src:Path.t
   -> dst:Path.t
+  -> unit
+  -> unit Fiber.t
+
+(** Generic version of [copy_file].  Rather than filenames, it takes
+    an input and output functions.  Their semantic must match the ones
+    of the [input] and [output] functions from the OCaml standard
+    library. *)
+val copy
+  :  file_tree:File_tree.t
+  -> input:(Bytes.t -> int -> int -> int)
+  -> output:(Bytes.t -> int -> int -> unit)
   -> unit
   -> unit Fiber.t
