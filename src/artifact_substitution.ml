@@ -172,153 +172,184 @@ let decode s =
   | exception Exit -> None
   | t -> Option.some_if (encode t = s) t
 
-module Copy_and_substitute = struct
-  let buf_len = max_len
-  let buf = Bytes.create buf_len
+(* Scan a buffer for "%%DUNE_PLACEHOLDER:<len>:" *)
+module Scanner = struct
+  (* The following module implement a scanner for special placeholders
+     strings.  The scanner needs to be fast as possible as it will
+     scan every single byte of the input so this module is carefully
+     written with performances in mind.
 
-  type copier =
-    { input : (Bytes.t -> int -> int -> int)
-    ; output : (Bytes.t -> int -> int -> unit)
-    }
+     The logic is implemented as a DFA where each OCaml function
+     represent a state of the automaton.
 
-  type potential_placeholder =
-    { (* Offset in [buf] where the placeholder was found *)
-      placeholder_start : int
-    ; (* Where the data ends in [buf] *)
-      end_of_data : int
-    ; (* The potential placeholder string itself *)
-      placeholder : string
-    }
+     In the future, we expect to have a C version of the scanner so
+     that it can run concurrently with OCaml code in a separate
+     thread.  This will speed up the promotion of large binaries from
+     the build directory to the source tree.
 
-  type scan_result =
-    | Found_potential_placeholder of potential_placeholder
+     {1 Notations}
+
+     In this module, [buf] is the buffer containing the data read from
+     the input.  [end_of_data] is the position in [buf] of the end of
+     data read from the input.  [pos] is the current reading position
+     in [buf].  [placeholder_start] represents the position in [buf]
+     where the current potential placeholder starts in [buf].  *)
+
+  (* The following type represents the possible state of the DFA. *)
+  type state =
     | Scan0
+    (* Initial state and state when we are not in a potential placeholder *)
     | Scan1
+    (* State after seeing one '%' *)
     | Scan2
-    | Scan_prefix of int (* Start of placeholder *)
-    | Scan_length of int (* Start of placeholder *) *
-                     int (* accumulated length *)
+    (* State after seeing at least two '%' *)
+    | Scan_prefix of int
+    (* [Scan_prefix placeholer_start] is the state after seeing [pos -
+       placeholer_start] characters from [prefix] *)
+    | Scan_length of int * int
+    (* [Scan_length (placeholer_start, acc)] is the state after seeing
+       all of [prefix] and the beginning of the length field. [acc] is
+       the length accumulated so far. *)
+    | Scan_placeholder of int * int
+    (* [Scan_placeholder (placeholer_start, len)] is the state after
+       seeing all of [prefix] and the length field, i.e. just after
+       the second ':' of the placeholder *)
 
-  (* The following functions scan the input channel for potential
-     placeholders and copy the contents to the output channel whenever
-     they know for sure that the data are not part of a placeholder.
+  (* The [run] function at the end of this module is the main function
+     that consume a buffer and return the new DFA state.  If the
+     beginning of placeholder is found before reaching the end of the
+     buffer, [run] immediately returns [Scan_placeholder
+     (placeholder_start, len)].
 
-     These functions need to be fast as they will scan every single
-     byte of the input.  They only recognize [prefix] and the length
-     field.  The rest of the placeholder is parsed using [decode].
+     The following functions represent the transition functions for
+     each state of the DFA.  [run] is called only at the beginning and
+     immediately chain the execution to the right transition
+     function.
 
-     In the future, we expect to have a C version of the scanning
-     functions so that it can be delegated to a separate C thread when
-     the file to copy is big.  This is why they are written this way
-     and in particular this they don't perform the substitution
-     themselves.
+     Each transition function is written as follow:
 
-     When a potential placeholder is found, we return
-     [Found_potential_placeholder].  The caller of [scan] is then
-     responsible for handling the placeholder and continuing the copy.
-     When [Found_potential_placeholder] is returned, the placeholder
-     itself is still in [buf] in case it is not a real placeholder.
+     {[
+       let state ~buf ~pos ~end_of_data ... =
+         if pos < end_of_data then
+           let c = Bytes.unsafe_get buf pos in
+           let pos = pos + 1 in
+           match c with
+           ...
+         else
+           State (...)
+     ]}
 
-     In all the [scanXXX] functions, [pos] represent the current
-     reading position in [buf].  All the characters between [0] and
-     [pos] exclusive have been analysed.  [end_of_data] represents the
-     position in [buf] where the data read from the input file end.
-     [placeholder_start] represents the position in [buf] where the
-     placeholder currently being scanned starts.
-
-     [placeholder_start] is not explicitely passed in [scan0], [scan1]
-     and [scan2] since it can easily be deduced from [pos]: it is
-     [pos] for [scan0], [pos - 1] for [scan1] and [pos - 2] for
-     [scan2].
-
-     [scan_prefix ~pos ~placeholder_start] corresponds to the state
-     where the last [pos - placeholder_start] characters in [buf] are
-     equal to the first [pos -placeholder_start] characters in
-     [prefix].
-
-     [scan_length ~acc] corresponds to the state where we have seen
-     [prefix] and are now reading the length, with current accumulated
-     value [acc] for the length.
-
-     Note that we use function parameters rather than mutable record
-     fields in [copier] so that the values can be kept in registers.
+     i.e. it either inspect the next character and chain the execution to the
+     next transition function or immediately return the DFA state if the end of
+     buffer is reached.  Reaching the end of buffer is handled in the [else]
+     branch for performance reason: the code generated by OCaml tend to make
+     following the [then] branch slightly more efficient and reaching the
+     end of buffer is the less likely case.
   *)
 
-  let rec scan0 ~pos ~end_of_data =
+  let rec scan0 ~buf ~pos ~end_of_data =
     if pos < end_of_data then
-      match Bytes.unsafe_get buf pos with
+      let c = Bytes.unsafe_get buf pos in
+      let pos = pos + 1 in
+      match c with
       | '%' ->
-        scan1 copier
-          ~pos:(pos + 1)
+        scan1
+          ~buf
+          ~pos
           ~end_of_data
       | _ ->
-        scan0 copier
-          ~pos:(pos + 1)
+        scan0
+          ~buf
+          ~pos
           ~end_of_data
     else
       Scan0
 
-  and scan1 ~pos ~end_of_data =
+  and scan1 ~buf ~pos ~end_of_data =
     if pos < end_of_data then
-      match Bytes.unsafe_get buf pos with
+      let c = Bytes.unsafe_get buf pos in
+      let pos = pos + 1 in
+      match c with
       | '%' ->
-        scan2 copier
-          ~pos:(pos + 1)
+        scan2
+          ~buf
+          ~pos
           ~end_of_data
       | _ ->
-        scan0 copier
-          ~pos:(pos + 1)
+        scan0
+          ~buf
+          ~pos
           ~end_of_data
     else
       Scan1
 
-  and scan2 ~pos ~end_of_data =
+  and scan2 ~buf ~pos ~end_of_data =
     if pos < end_of_data then
-      match Bytes.unsafe_get buf pos with
+      let c = Bytes.unsafe_get buf pos in
+      let pos = pos + 1 in
+      match c with
       | '%' ->
-        scan2 copier
-          ~pos:(pos + 1)
+        scan2
+          ~buf
+          ~pos
           ~end_of_data
       | 'D' ->
-        scan_prefix copier
-          ~pos:(pos + 1)
-          ~placeholder_start:(pos - 2)
+        scan_prefix
+          ~buf
+          ~pos
           ~end_of_data
+          ~placeholder_start:(pos - 3)
       | _ ->
-        scan0 copier
-          ~pos:(pos + 1)
+        scan0
+          ~buf
+          ~pos
           ~end_of_data
     else
       Scan2
 
-  and scan_prefix ~pos ~placeholder_start ~end_of_data =
-    if placeholder_start = prefix_len then
-      scan_length ~pos ~placeholder_start ~end_of_data ~acc:0
-    else if pos < end_of_data then
-      match Bytes.unsafe_get buf pos with
+  and scan_prefix ~buf ~pos ~end_of_data ~placeholder_start =
+    if pos < end_of_data then
+      let pos_in_prefix = pos - placeholder_start in
+      let c = Bytes.unsafe_get buf pos in
+      let pos = pos + 1 in
+      match c with
       | '%' ->
-        scan1 copier
-          ~pos:(pos + 1)
+        scan1
+          ~buf
+          ~pos
           ~end_of_data
       | c ->
-        if c = prefix.[pos - placeholder_start] then
-          scan_prefix copier
-            ~placeholder_start
-            ~pos:(pos + 1)
-            ~end_of_data
-        else
-          scan0 copier
-            ~pos:(pos + 1)
+        if c = prefix.[pos_in_prefix] then begin
+          if pos_in_prefix = prefix_len - 1 then
+            scan_length
+              ~buf
+              ~pos
+              ~end_of_data
+              ~placeholder_start
+              ~acc:0
+          else
+            scan_prefix
+              ~buf
+              ~pos
+              ~end_of_data
+              ~placeholder_start
+        end else
+          scan0
+            ~buf
+            ~pos
             ~end_of_data
     else
       Scan_prefix placeholder_start
 
-  and scan_length ~pos ~placeholder_start ~end_of_data ~acc =
+  and scan_length ~buf ~pos ~end_of_data ~placeholder_start ~acc =
     if pos < end_of_data then
-      match Bytes.unsafe_get buf pos with
+      let c = Bytes.unsafe_get buf pos in
+      let pos = pos + 1 in
+      match c with
       | '%' ->
-        scan1 copier
-          ~pos:(pos + 1)
+        scan1
+          ~buf
+          ~pos
           ~end_of_data
       | '0'..'9' as c ->
         let n = Char.code c - Char.code '0' in
@@ -327,113 +358,110 @@ module Copy_and_substitute = struct
           (* We don't allow leading zeros in length fields and a
              length of [0] is not possible, so [acc = 0] here
              correspond to an invalid placeholder *)
-          scan0 copier
-            ~pos:(pos + 1)
+          scan0
+            ~buf
+            ~pos
             ~end_of_data
         else
-          scan_length copier
-            ~placeholder_start
-            ~pos:(pos + 1)
+          scan_length
+            ~buf
+            ~pos
             ~end_of_data
+            ~placeholder_start
             ~acc
       | ':' ->
         if pos - placeholder_start + String.length ":M:%%" > acc then
           (* If the length is too small, then this is surely not a
              valid placeholder *)
-          scan0 copier
-            ~pos:(pos + 1)
+          scan0
+            ~buf
+            ~pos
             ~end_of_data
         else
-          Found_potential_placeholder (placeholder_start, acc)
+          Scan_placeholder (placeholder_start, acc)
       | _ ->
-        scan0 copier
-          ~pos:(pos + 1)
+        scan0
+          ~buf
+          ~pos
           ~end_of_data
     else
       Scan_length (placeholder_start, acc)
- 
-  (* Refills [buf] by reading from the input channel.  The data
-     between [placeholder_start] and [end_of_data] are moved to the
-     beginning of [buf] and the new data from the input are placed
-     after that.  We need to keep the data between [placeholder_start]
-     and [end_of_data] in [buf] until we are sure that we indeed have
-     a full placeholder.  If we realise that we don't, then such data
-     would need to be sent to the output.
 
-     If the end of input is reached, then we know for sure that these
-     data are not the beginning of a placeholder and can be sent to
-     the output channel.
-
-     After a call to [refill], [pos] is [end_of_data -
-     placeholder_start], [placeholder_start] is reset to [0] and the
-     new [end_of_data] position is returned by [refill].
-
-     [refill] is marked with [@@inline never] because it is not called
-     often and we don't want it to be inlined in all the [scan]
-     functions.
-  *)
-  let refill copier ~placeholder_start ~end_of_data =
-    if placeholder_start > 0 then copier.output buf 0 placeholder_start;
-    let leftover = end_of_data - placeholder_start in
-    if leftover > 0 then
-      Bytes.blit ~src:buf ~dst:buf ~src_pos:placeholder_start ~dst_pos:0
-        ~len:leftover;
-    match copier.input buf leftover (buf_len - leftover) with
-    | 0 ->
-      copier.output buf 0 leftover;
-      0
-    | n ->
-      leftover + n
-  [@@inline never]
-
-  let rec loop ft copier ~pos ~end_of_data =
-    match scan0 copier ~pos ~end_of_data with
-    | Found_potential_placeholder (placeholder_start, len) -> begin
-        if end_of_data - placeholder_start >= len then
-          process_placeholder ft copier ~placeholder_start ~len
-            ~end_of_data:n
-        else
-          match refill copier ~placeholder_start ~end_of_data with
-          | 0 -> Fiber.return ()
-          | n ->
-            if n >= len then
-              process_placeholder ft copier ~placeholder_start:0 ~len
-                ~end_of_data:n
-            else begin
-              copier.output buf 0 n;
-              Fiber.return ()
-            end
-      end
-    | st ->
-      match refill copier ~placeholder_start ~end_of_data with
-      | 0 -> Fiber.return ()
-      | n ->
-        
-      
-  and process_placeholder ft copier ~placeholder_start ~len ~end_of_data =
-    let open Fiber.O in
-    let placeholder = Bytes.sub_string buf placeholder_start len in
-    match decode placeholder with
-    | Some t ->
-      let* v = eval ft t in
-      copier.output buf 0 placeholder_start;
-      let s = Mode.encode_substitution t.mode v in
-      copier.output (Bytes.unsafe_of_string s) 0 (String.length s);
-      loop ft copier
-        ~pos:(placeholder_start + len)
-        ~end_of_data
-    | None ->
-      (* Restart just after [prefix] since we know for sure that a
-         placeholder cannot start before that. *)
-      loop ft copier
-        ~pos:(placeholder_start + prefix_len)
-        ~end_of_data
-
-  let run ft copier = loop ft copier ~pos:0 ~end_of_data:0
+  let run state ~buf ~pos ~end_of_data =
+    match state with
+    | Scan0 -> scan0 ~buf ~pos ~end_of_data
+    | Scan1 -> scan1 ~buf ~pos ~end_of_data
+    | Scan2 -> scan2 ~buf ~pos ~end_of_data
+    | Scan_prefix placeholder_start ->
+      scan_prefix ~buf ~pos ~end_of_data ~placeholder_start
+    | Scan_length (placeholder_start, acc) ->
+      scan_length ~buf ~pos ~end_of_data ~placeholder_start ~acc
+    | Scan_placeholder _ ->
+      state
 end
 
-let copy ~file_tree ~input ~output () =
-  Copy_and_substitute.run file_tree { input; output }
+let copy =
+  let buf_len = max_len in
+  let buf = Bytes.create buf_len in
+  fun ~file_tree ~input ~output ->
+    let open Fiber.O in
+    let rec loop scanner_state ~pos ~end_of_data =
+      match Scanner.run scanner_state ~buf ~pos ~end_of_data with
+      | Scan_placeholder (placeholder_start, len)
+        when len <= end_of_data - placeholder_start -> begin
+          let placeholder = Bytes.sub_string buf ~pos:placeholder_start ~len in
+          match decode placeholder with
+          | Some t ->
+            let* v = eval file_tree t in
+            let s = Mode.encode_substitution t.mode v in
+            output buf 0 placeholder_start;
+            output (Bytes.unsafe_of_string s) 0 (String.length s);
+            loop
+              Scan0
+              ~pos:(placeholder_start + len)
+              ~end_of_data
+          | None ->
+            (* Restart just after [prefix] since we know for sure that
+               a placeholder cannot start before that. *)
+            loop
+              Scan0
+              ~pos:(placeholder_start + prefix_len)
+              ~end_of_data
+        end
+      | scanner_state ->
+        let placeholder_start =
+          match scanner_state with
+          | Scan0 -> end_of_data
+          | Scan1 -> end_of_data - 1
+          | Scan2 -> end_of_data - 2
+          | Scan_prefix placeholder_start
+          | Scan_length (placeholder_start, _)
+          | Scan_placeholder (placeholder_start, _) -> placeholder_start
+        in
+        (* All the data before [placeholder_start] can be sent to the
+           output immediately since we know for sure that it is not
+           part of a placeholder *)
+        if placeholder_start > 0 then output buf 0 placeholder_start;
+        (* [leftover] correspond to a prefix of a potential
+           placeholder in [buf].  We need to keep it in [buf] until we
+           know for sure whether it is a real placeholder or not. *)
+        let leftover = end_of_data - placeholder_start in
+        if leftover > 0 then
+          Bytes.blit ~src:buf ~dst:buf ~src_pos:placeholder_start ~dst_pos:0
+            ~len:leftover;
+        match input buf leftover (buf_len - leftover) with
+        | 0 ->
+          (* Nothing more to read; [leftover] is definitely not the
+             beginning of a placeholder, send it and end the operation
+          *)
+          output buf 0 leftover;
+          Fiber.return ()
+        | n ->
+          loop scanner_state
+            ~pos:leftover
+            ~end_of_data:(leftover + n)
+    in
+    loop Scan0 ~pos:0 ~end_of_data:0
 
 let copy_file ~file_tree ?(chmod=Fn.id) ~src ~dst () =
   Io.with_file_in src ~f:(fun ic ->
@@ -444,4 +472,4 @@ let copy_file ~file_tree ?(chmod=Fn.id) ~src ~dst () =
                     (Path.to_string dst))
       ~finally:close_out
       ~f:(fun oc ->
-        copy ~file_tree ~input:(input ic) ~output:(output oc) () ))
+        copy ~file_tree ~input:(input ic) ~output:(output oc)))

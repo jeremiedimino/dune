@@ -78,10 +78,11 @@ let test x =
            ~src_pos:!ofs
            ~dst_pos:pos
            ~len:to_copy;
+         ofs := !ofs + to_copy;
          to_copy
      in
      let output = Buffer.add_subbytes buf in
-     Artifact_substitution.copy ()
+     Artifact_substitution.copy
        ~file_tree:(Lazy.force File_tree.empty)
        ~input
        ~output);

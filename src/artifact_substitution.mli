@@ -58,5 +58,4 @@ val copy
   :  file_tree:File_tree.t
   -> input:(Bytes.t -> int -> int -> int)
   -> output:(Bytes.t -> int -> int -> unit)
-  -> unit
   -> unit Fiber.t
