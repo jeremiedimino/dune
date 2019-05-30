@@ -1,0 +1,36 @@
+open Stdune;;
+open Dune;;
+open Fiber.O;;
+
+#warnings "-40";;
+
+(* Test harness *)
+
+let () =
+  Path.set_root (Path.External.cwd ());
+  Path.set_build_dir (Path.Kind.of_string "_build")
+;;
+
+let temp_file () =
+  let fn = Filename.temp_file "dune-test-subst" ".bin" in
+  at_exit (fun () -> try Sys.remove fn with _ -> ());
+  Path.of_filename_relative_to_initial_cwd fn
+;;
+
+let src = temp_file ();;
+let dst = temp_file ();;
+
+let test ~input ~expected =
+  Io.write_file src input;
+  Fiber.run
+    (Artifact_substitution.copy_file ()
+       ~file_tree:(Lazy.force File_tree.empty)
+       ~src
+       ~dst);
+  let s = Io.read_file dst in
+  if s <> expected then
+    eprintf "ERROR: "
+
+[%%ignore]
+
+(* Tests *)

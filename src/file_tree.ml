@@ -162,6 +162,17 @@ end
 
 type t = Dir.t
 
+let empty : t Lazy.t = lazy
+  { path = Path.Source.root
+  ; ignored = false
+  ; contents = lazy { files = String.Set.empty
+                    ; sub_dirs = String.Map.empty
+                    ; dune_file = None
+                    }
+  ; project = Lazy.force Dune_project.anonymous
+  ; vcs = None
+  }
+
 let root t = t
 
 let is_temp_file fn =

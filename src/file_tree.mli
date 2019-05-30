@@ -73,6 +73,9 @@ val load
   -> ancestor_vcs:Vcs.t option
   -> t
 
+(** An empty file tree *)
+val empty : t Lazy.t
+
 (** Passing [~traverse_ignored_dirs:true] to this functions causes the
     whole source tree to be deeply scanned, including ignored
     sub-trees. *)
