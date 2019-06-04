@@ -28,19 +28,6 @@ module Name = struct
   module Infix = Comparable.Operators(T)
 end
 
-module Version_source = struct
-  type t =
-    | Package
-    | Project
-
-  let to_dyn t =
-    Dyn.Variant
-      ((match t with
-         | Package -> "Package"
-         | Project -> "Project"),
-       [])
-end
-
 module Dependency = struct
   module Op = struct
     type t =
@@ -219,7 +206,7 @@ type t =
   ; conflicts              : Dependency.t list
   ; depopts                : Dependency.t list
   ; path                   : Path.Source.t
-  ; version                : (string * Version_source.t) option
+  ; version                : string option
   ; kind                   : Kind.t
   ; tags                   : string list
   }
@@ -270,9 +257,7 @@ let to_dyn { name; path; version ; synopsis ; description
     ; "depopts", list Dependency.to_dyn depopts
     ; "kind", Kind.to_dyn kind
     ; "tags", list string tags
-    ; "version",
-      Option (Option.map version ~f:(fun (v, s) ->
-        Dyn.Tuple [String v; Version_source.to_dyn s]))
+    ; "version", option string version
     ]
 
 let pp fmt t = Dyn.pp fmt (to_dyn t)

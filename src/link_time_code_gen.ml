@@ -124,7 +124,7 @@ let dune_build_info_code cctx ~libs ~package =
   in
   let version_of_package (p : Package.t) =
     match p.version with
-    | Some (v, _) -> direct v
+    | Some v -> direct v
     | None -> placeholder p.path
   in
   let version =

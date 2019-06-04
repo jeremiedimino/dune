@@ -5,7 +5,7 @@ open! No_io
 
 module Library = Dune_file.Library
 
-let gen_dune_package sctx ~version ~(pkg : Local_package.t) =
+let gen_dune_package sctx ~(pkg : Local_package.t) =
   let ctx = Super_context.context sctx in
   let dune_package_file = Local_package.dune_package_file pkg in
   let meta_template = Local_package.meta_template pkg in
@@ -13,45 +13,41 @@ let gen_dune_package sctx ~version ~(pkg : Local_package.t) =
   let dune_version = Syntax.greatest_supported_version Stanza.syntax in
   Build.if_file_exists (Path.build meta_template)
     ~then_:(Build.return Dune_package.Or_meta.Use_meta)
-    ~else_:(
-      version >>^ (fun version ->
-        let dune_package =
-          let pkg_root =
-            Config.local_install_lib_dir ~context:ctx.name ~package:name
+    ~else_:(Build.S.map (Build.return ()) ~f:(fun () ->
+      let pkg_root =
+        Config.local_install_lib_dir ~context:ctx.name ~package:name
+      in
+      let lib_root lib =
+        let (_, subdir) = Lib_name.split (Lib.name lib) in
+        Path.Build.L.relative pkg_root subdir
+      in
+      let libs =
+        Local_package.libs pkg
+        |> Lib.Set.to_list
+        |> List.map ~f:(fun lib ->
+          let name = Lib.name lib in
+          let dir_contents =
+            Dir_contents.get_without_rules sctx ~dir:(
+              Path.as_in_build_dir_exn (Lib.src_dir lib)) in
+          let lib_modules =
+            Dir_contents.modules_of_library dir_contents ~name in
+          let foreign_objects =
+            let dir = Obj_dir.obj_dir (Lib.obj_dir lib) in
+            Dir_contents.c_sources_of_library dir_contents ~name
+            |> C.Sources.objects ~dir:(Path.as_in_build_dir_exn dir)
+                 ~ext_obj:ctx.ext_obj
+            |> List.map ~f:Path.build
           in
-          let lib_root lib =
-            let (_, subdir) = Lib_name.split (Lib.name lib) in
-            Path.Build.L.relative pkg_root subdir
-          in
-          let libs =
-            Local_package.libs pkg
-            |> Lib.Set.to_list
-            |> List.map ~f:(fun lib ->
-              let name = Lib.name lib in
-              let dir_contents =
-                Dir_contents.get_without_rules sctx ~dir:(
-                  Path.as_in_build_dir_exn (Lib.src_dir lib)) in
-              let lib_modules =
-                Dir_contents.modules_of_library dir_contents ~name in
-              let foreign_objects =
-                let dir = Obj_dir.obj_dir (Lib.obj_dir lib) in
-                Dir_contents.c_sources_of_library dir_contents ~name
-                |> C.Sources.objects ~dir:(Path.as_in_build_dir_exn dir)
-                     ~ext_obj:ctx.ext_obj
-                |> List.map ~f:Path.build
-              in
-              Lib.to_dune_lib lib ~dir:(Path.build (lib_root lib)) ~lib_modules
-                ~foreign_objects)
-          in
-          Dune_package.Or_meta.Dune_package
-            { Dune_package.
-              version
-            ; name
-            ; libs
-            ; dir = Path.build pkg_root
-            }
-        in
-        dune_package))
+          Lib.to_dune_lib lib ~dir:(Path.build (lib_root lib)) ~lib_modules
+            ~foreign_objects)
+      in
+      Dune_package.Or_meta.Dune_package
+        { Dune_package.
+          version = (Local_package.package pkg).version
+        ; name
+        ; libs
+        ; dir = Path.build pkg_root
+        }))
   >>^ (fun pkg ->
     Dune_package.Or_meta.encode ~dune_version pkg
     |> Format.asprintf "%a@."
@@ -61,54 +57,15 @@ let gen_dune_package sctx ~version ~(pkg : Local_package.t) =
   Build.write_file_dyn  dune_package_file
   |> Super_context.add_rule sctx ~dir:ctx.build_dir
 
-type version_method =
-  | File of string
-  | From_metadata of Package.Version_source.t
-
-(* DUNE2: delete this since we have formalised version management via
-   the vcs *)
-let pkg_version ~path ~(pkg : Package.t) =
-  let rec loop = function
-    | [] -> Build.return None
-    | candidate :: rest ->
-      match candidate with
-      | File fn ->
-        let p = Path.Build.relative path fn |> Path.build in
-        Build.if_file_exists p
-          ~then_:(Build.lines_of p
-                  >>^ function
-                  | ver :: _ -> Some ver
-                  | _ -> Some "")
-          ~else_:(loop rest)
-      | From_metadata source ->
-        match pkg.version with
-        | Some (v, source') when source = source' ->
-          Build.return (Some v)
-        | _ -> loop rest
-  in
-  loop
-    [ From_metadata Package
-    ; File (Package.Name.version_fn pkg.name)
-    ; From_metadata Project
-    ; File "version"
-    ; File "VERSION"
-    ]
-
 let init_meta sctx ~dir =
   Local_package.defined_in sctx ~dir
   |> List.iter ~f:(fun pkg ->
     let libs = Local_package.libs pkg in
-    let path = Local_package.build_dir pkg in
     let pkg_name = Local_package.name pkg in
     let meta = Local_package.meta_file pkg in
     let meta_template = Path.build (Local_package.meta_template pkg) in
-    let version =
-      let pkg = Local_package.package pkg in
-      let get = pkg_version ~pkg ~path in
-      Super_context.Pkg_version.set sctx pkg get
-    in
 
-    gen_dune_package sctx ~version ~pkg;
+    gen_dune_package sctx ~pkg;
 
     let template =
       Build.if_file_exists meta_template
@@ -126,17 +83,15 @@ let init_meta sctx ~dir =
             Build.lines_of meta_template)
         ~else_:(Build.return ["# DUNE_GEN"])
     in
-    let meta_contents =
-      version >>^ fun version ->
-      Gen_meta.gen
-        ~package:(Package.Name.to_string pkg_name)
-        ~version
-        (Lib.Set.to_list libs)
-    in
     let ctx = Super_context.context sctx in
     Super_context.add_rule sctx ~dir:ctx.build_dir
-      (Build.fanout meta_contents template
-       >>^ (fun ((meta : Meta.t), template) ->
+      (template >>^ (fun template ->
+         let meta =
+           Gen_meta.gen
+             ~package:(Package.Name.to_string pkg_name)
+             ~version:(Local_package.package pkg).version
+             (Lib.Set.to_list libs)
+         in
          let buf = Buffer.create 1024 in
          let ppf = Format.formatter_of_buffer buf in
          Format.pp_open_vbox ppf 0;

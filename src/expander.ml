@@ -208,16 +208,8 @@ let parse_lib_file ~loc s =
     Errors.fail loc "invalid %%{lib:...} form: %s" s
   | Some (lib, f) -> (Lib_name.of_string_exn ~loc:(Some loc) lib, f)
 
-type dynamic =
-  { read_package : Package.t -> (unit, string option) Build.t
-  }
-
-let error_expansion_kind =
-  { read_package = fun _ -> assert false
-  }
-
 type expansion_kind =
-  | Dynamic of dynamic
+  | Dynamic
   | Static
 
 let cc_of_c_flags t (cc : (unit, string list) Build.t C.Kind.Dict.t) =
@@ -244,12 +236,7 @@ let expand_and_record acc ~map_exe ~dep_kind ~scope
     | Static -> fun _ ->
       Errors.fail loc "%s cannot be used in this position"
         (String_with_vars.Var.describe pform)
-    | Dynamic _ -> Resolved_forms.add_ddep acc ~key
-  in
-  let { read_package } =
-    match expansion_kind with
-    | Static -> error_expansion_kind
-    | Dynamic d -> d
+    | Dynamic -> Resolved_forms.add_ddep acc ~key
   in
   let open Build.O in
   match (expansion : Pform.Expansion.t) with
@@ -333,13 +320,8 @@ let expand_and_record acc ~map_exe ~dep_kind ~scope
               (Dune_project.packages (Scope.project scope))
               (Package.Name.of_string s) with
       | Some p ->
-        let open Build.O in
-        let x =
-          read_package p >>^ function
-          | None   -> [Value.String ""]
-          | Some s -> [String s]
-        in
-        add_ddep x
+        let version = Option.value p.version ~default:"" in
+        Some (str_exp version)
       | None ->
         Resolved_forms.add_fail acc { fail = fun () ->
           Errors.fail loc
@@ -347,7 +329,7 @@ let expand_and_record acc ~map_exe ~dep_kind ~scope
         }
     end
 
-let expand_and_record_deps acc ~(dir : Path.Build.t) ~read_package ~dep_kind
+let expand_and_record_deps acc ~(dir : Path.Build.t) ~dep_kind
       ~targets_written_by_user ~map_exe ~expand_var ~cc
       t pform syntax_version =
   let res =
@@ -374,7 +356,7 @@ let expand_and_record_deps acc ~(dir : Path.Build.t) ~read_package ~dep_kind
           end
         | _ ->
           expand_and_record acc ~map_exe ~dep_kind ~scope:t.scope
-            ~expansion_kind:(Dynamic { read_package }) ~dir ~pform
+            ~expansion_kind:Dynamic ~dir ~pform
             ~cc t expansion
     )
   in
@@ -424,9 +406,9 @@ let gen_with_record_deps ~expand t resolved_forms ~dep_kind ~map_exe
   ; bindings
   }
 
-let with_record_deps t resolved_forms ~read_package ~targets_written_by_user =
+let with_record_deps t resolved_forms ~targets_written_by_user =
   let expand =
-    expand_and_record_deps ~read_package ~targets_written_by_user in
+    expand_and_record_deps ~targets_written_by_user in
   gen_with_record_deps ~expand t resolved_forms
 
 let with_record_no_ddeps =

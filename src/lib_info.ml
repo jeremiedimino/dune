@@ -184,7 +184,7 @@ let of_library_stanza ~dir
   in
   let version =
     match status with
-    | Public pkg -> Option.map pkg.version ~f:fst
+    | Public pkg -> pkg.version
     | Installed | Private _ -> None
   in
   { loc = conf.buildable.loc
