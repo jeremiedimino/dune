@@ -56,6 +56,12 @@ val newline : _ t
 (** Convert tags in a documents *)
 val map_tags : 'a t -> f:('a -> 'b) -> 'b t
 
+(** Print a tabulation *)
+val tabulate : 'a t ->
+
+(** Change the printing of newlines *)
+val map_newlines : 'a t -> 
+
 (** {1 Boxes} *)
 
 (** Boxes are the basic components to control the layout of the text.
