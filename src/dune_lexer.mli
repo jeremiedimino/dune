@@ -16,3 +16,6 @@ val first_line : Lexing.lexbuf -> first_line
 val maybe_first_line : Lexing.lexbuf -> first_line option
 
 val eof_reached : Lexing.lexbuf -> bool
+
+(** Parse a location as printed by the OCaml compiler *)
+val ocaml_location : Lexing.lexbuf -> Loc.t option

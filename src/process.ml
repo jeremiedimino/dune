@@ -309,8 +309,8 @@ module Exit_status = struct
 
   (* In this module, we don't need the "Error: " prefix given that it
      is already included in the error message from the command. *)
-  let fail paragraphs =
-    raise (User_error.E (User_message.make paragraphs))
+  let fail ?loc paragraphs =
+    raise (User_error.E (User_message.make ?loc paragraphs))
 
   let handle_verbose t ~id ~output ~command_line =
     let open Pp.O in
@@ -348,29 +348,29 @@ module Exit_status = struct
            command_line
         :: Option.to_list output)
 
-  (* Check if the command output starts with a location, ignoring ansi
+  (* Try to extract a location from an error message, ignoring ANSI
      escape sequences *)
-  let outputs_starts_with_location =
-    let rec loop s pos len prefix =
-      match prefix with
-      | [] -> true
-      | c :: rest ->
-        pos < len &&
-        match s.[pos] with
-        | '\027' -> begin
-            match String.index_from s pos 'm' with
-            | None -> false
-            | Some pos -> loop s (pos + 1) len prefix
-          end
-        | c' -> c = c' && loop s (pos + 1) len rest
+  let extract_location s =
+    let first_line, rest =
+      match String.index s '\n' with
+      | None -> (s, "")
+      | Some (first_line, rest) ->
+        let first_line =
+          String.drop_suffix first_line ~suffix:"\r"
+          |> Option.value ~default:first_line
+        in
+        (first_line, rest)
     in
-    fun output -> loop output 0 (String.length output) ['F'; 'i'; 'l'; 'e'; ' ']
+    let first_line = Ansi_color.strip first_line in
+    let loc = Dune_lexer.ocaml_location (Lexing.from_string first_line) in
+    (loc, if Option.is_some loc then rest else s)
 
   let handle_non_verbose t ~display ~purpose ~output ~prog ~command_line =
     let open Pp.O in
+    let loc, output = extract_location output in
     let show_command =
       Config.show_full_command_on_error () ||
-      not (outputs_starts_with_location output)
+      Option.is_none loc
     in
     let output = parse_output output in
     let _, progname, _ = Fancy.split_prog prog in

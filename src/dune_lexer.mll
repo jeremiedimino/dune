@@ -19,6 +19,7 @@ let invalid_lang_line start lexbuf =
 let newline   = '\r'? '\n'
 let blank     = [' ' '\t']
 let atom_char = [^';' '(' ')' '"' '#' '|' '\000'-'\032']
+let number    = '0'-'9'+
 
 rule is_script = parse
   | "(* -*- tuareg -*- *)" { true }
@@ -65,6 +66,49 @@ and to_eol = parse
 and eof_reached = parse
   | eof { true  }
   | ""  { false }
+
+and ocaml_location = parse
+  | "File \"" ([^ '"']* as fname) "\""
+      { ocaml_location2 lexbuf }
+
+  | "" { None }
+
+and ocaml_location2 fname = parse
+  | ", line " (number as line)
+      { ocaml_location3 fname line line lexbuf }
+  | ", lines " (number as line1) (number as line2)
+      { ocaml_location3 fname line1 line2 lexbuf }
+  | ""
+      { None }
+
+and ocaml_location3 fname line1 line2 = parse
+  | ", characters " (number as c1) "-" (number as c2)
+      { ocaml_location4 fname line1 line2 c1 c2 lexbuf }
+  | ""
+      { ocaml_location4 fname line1 line2 0 0 lexbuf }
+
+and ocaml_location4 fname line1 line2 c1 c2 = parse
+  | ":" eof
+      { Some
+          { Loc.
+            start =
+              { Lexing.
+                pos_fname = fname
+              ; pos_lnum = line1
+              ; pos_bol = 0
+              ; pos_cnum = c1
+              }
+          ; stop =
+              { Lexing.
+                pos_fname = fname
+              ; pos_lnum = line2
+              ; pos_bol = 0
+              ; pos_cnum = c2
+              }
+          }
+      }
+  | ""
+    { None }
 
 {
   let first_line lb =
