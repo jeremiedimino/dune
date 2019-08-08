@@ -104,11 +104,11 @@ let executables_rules ~sctx ~dir ~dir_kind ~expander
       else
         Some js_of_ocaml
     in
-    let dynlink =
+    let dynlink = false (*
       Dune_file.Executables.Link_mode.Set.exists exes.modes ~f:(fun mode ->
         match mode.kind with
         | Shared_object -> true
-        | _ -> false)
+                           | _ -> false)*)
     in
     Compilation_context.create ()
       ~super_context:sctx
