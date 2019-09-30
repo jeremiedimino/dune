@@ -116,12 +116,9 @@ module Dependency = struct
                 Or x )
             ]
           in
-          peek_exn
-          >>= function
-          | Atom (_loc, A s) when String.is_prefix s ~prefix:":" ->
-            let+ () = junk in
-            Bvar (Var (String.drop s 1))
-          | _ -> sum (ops @ logops))
+          if_colon_form
+            ~then_:(return (fun (_loc, name) -> Bvar (Var name)))
+            ~else_:(sum (ops @ logops)))
 
     let rec to_dyn =
       let open Dyn.Encoder in

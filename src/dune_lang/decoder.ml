@@ -285,6 +285,14 @@ let if_list ~then_ ~else_ =
   | List _ -> then_
   | _ -> else_
 
+let if_colon_form ~then_ ~else_ =
+  peek_exn
+  >>= function
+  | Atom (loc, A s) when String.is_prefix s ~prefix:":" ->
+    let name = String.drop s 1 in
+    enter (junk >>= fun () -> then_ >>| fun f -> f (loc, name))
+  | _ -> else_
+
 let if_paren_colon_form ~then_ ~else_ =
   peek_exn
   >>= function

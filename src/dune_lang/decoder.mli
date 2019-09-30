@@ -49,8 +49,6 @@ val parse : 'a t -> Univ_map.t -> ast -> 'a
 
 val return : 'a -> ('a, _) parser
 
-val ( >>= ) : ('a, 'k) parser -> ('a -> ('b, 'k) parser) -> ('b, 'k) parser
-
 val ( >>| ) : ('a, 'k) parser -> ('a -> 'b) -> ('b, 'k) parser
 
 val ( >>> ) : (unit, 'k) parser -> ('a, 'k) parser -> ('a, 'k) parser
@@ -82,6 +80,10 @@ val if_eos : then_:('a, 'b) parser -> else_:('a, 'b) parser -> ('a, 'b) parser
 (** If the next element of the sequence is a list, parse it with [then_],
     otherwise parse it with [else_]. *)
 val if_list : then_:'a t -> else_:'a t -> 'a t
+
+(** If the next element of the sequence is of the form [:<name>], use [then_]
+    to parse [...]. Otherwise use [else_]. *)
+val if_colon_form : then_:(Loc.t * string -> 'a) t -> else_:'a t -> 'a t
 
 (** If the next element of the sequence is of the form [(:<name> ...)], use
     [then_] to parse [...]. Otherwise use [else_]. *)

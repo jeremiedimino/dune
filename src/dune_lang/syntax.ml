@@ -134,11 +134,10 @@ open Decoder
 let set t ver parser = set t.key ver parser
 
 let get_exn t =
-  get t.key
-  >>= function
-  | Some x -> return x
+  let+ context = get_all in
+  match Univ_map.find context t.key with
+  | Some x -> x
   | None ->
-    let+ context = get_all in
     Code_error.raise "Syntax identifier is unset"
       [ ("name", Dyn.Encoder.string t.name)
       ; ("supported_versions", Supported_versions.to_dyn t.supported_versions)
