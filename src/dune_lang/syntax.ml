@@ -158,7 +158,7 @@ let deleted_in t ver =
   if current_ver < ver then
     return ()
   else
-    let* loc, what = desc () in
+    let+ loc, what = desc () in
     Error.deleted_in loc t ver ~what
 
 let deprecated_in t ver =
@@ -185,9 +185,8 @@ let since ?(fatal = true) t ver =
   if current_ver >= ver then
     return ()
   else
-    desc ()
-    >>= function
-    | loc, what when fatal -> Error.since loc t ver ~what
-    | loc, what ->
-      User_warning.emit ~loc [ Pp.text (Error_msg.since t ver ~what) ];
-      return ()
+    let+ loc, what = desc () in
+    if fatal then
+      Error.since loc t ver ~what
+    else
+      User_warning.emit ~loc [ Pp.text (Error_msg.since t ver ~what) ]

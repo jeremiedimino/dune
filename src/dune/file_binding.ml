@@ -78,24 +78,19 @@ module Unexpanded = struct
         else
           s
       in
-      peek_exn
-      >>= function
-      | Atom _
-       |Quoted_string _
-       |Template _ ->
-        decode >>| fun src -> { src; dst = None }
-      | List (_, [ _; Atom (_, A "as"); _ ]) ->
-        enter
-          (let* src = decode in
-           keyword "as"
-           >>> let* dst = decode in
-               return { src; dst = Some dst })
-      | sexp ->
-        User_error.raise ~loc:(Dune_lang.Ast.loc sexp)
-          [ Pp.text
-              "invalid format, <name> or (<name> as <install-as>) expected"
-          ]
+      if_list
+        ~then_:
+          (enter
+             (let+ src = decode
+              and+ () = keyword "as"
+              and+ dst = decode in
+              { src; dst = Some dst }))
+        ~else_:
+          (let+ src = decode in
+           { src; dst = None })
 
+    (* | sexp -> User_error.raise ~loc:(Dune_lang.Ast.loc sexp) [ Pp.text
+       "invalid format, <name> or (<name> as <install-as>) expected" ] *)
     let decode =
       let open Dune_lang.Decoder in
       repeat decode_file
