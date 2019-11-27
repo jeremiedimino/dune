@@ -9,7 +9,7 @@
 (executable
  (name        main_jbuilder)
  (public_name jbuilder)
- (package     dune)
+ (package     jbuilder)
  (modules     main_jbuilder)
  (libraries   wp_jbuilder main)
  (preprocess  no_preprocessing))

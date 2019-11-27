@@ -1,3 +1,9 @@
+1.11.4 (27/11/2019)
+-------------------
+
+- Release a standalone jbuilder 1.11.4 package that builds with Dune
+  >= 2.0.0
+
 1.11.4 (09/10/2019)
 -------------------
 

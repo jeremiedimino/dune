@@ -13,6 +13,18 @@
 (documentation "https://dune.readthedocs.io/")
 
 (package
+ (name jbuilder)
+ (depends
+  (ocaml (>= 4.02))
+  base-unix
+  base-threads
+  (dune (>= 2.0.0)))
+ (synopsis "Fast, portable and opinionated build system (deprecated)")
+ (description "
+This package is deprecated, please use dune instead.
+"))
+
+(package
  (name dune)
  (depends
   (ocaml (>= 4.02))
