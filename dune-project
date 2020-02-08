@@ -114,3 +114,14 @@ execution of the action.
  (description "\
 dune-glob provides a parser and interpreter for globs as \
 understood by dune language."))
+
+(package
+ (name dune-cram)
+ (depends
+  (dune-private-libs (= :version))
+  (dune-configurator (= :version))
+  (dune-build-info (= :version)))
+ (synopsis "Cram test like tool")
+ (description "\
+Tool similar to https://bitheap.org/cram/
+"))
