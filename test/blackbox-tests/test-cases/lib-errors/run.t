@@ -22,4 +22,3 @@ Select with no solution
                    ^^^^^^^^^^^^^^^
   Error: No solution found for this select form.
   [1]
-

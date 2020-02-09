@@ -23,8 +23,7 @@ ordinary executable instead of one linked against dune-action-plugin.
   3 |  (action (dynamic-run ./foo.exe)))
   Error: Executable 'foo.exe' declared as using dune-action-plugin (declared
   with 'dynamic-run' tag) failed to respond to dune.
-  
+
   If you don't use dynamic dependency discovery in your executable you may
   consider changing 'dynamic-run' to 'run' in your rule definition.
   [1]
-

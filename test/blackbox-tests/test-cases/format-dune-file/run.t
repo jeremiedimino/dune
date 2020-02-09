@@ -24,7 +24,7 @@ between them:
 
   $ echo '(a b) (c d)' | dune format-dune-file
   (a b)
-  
+
   (c d)
 
 It is possible to pass a file name:
@@ -66,7 +66,7 @@ In multi-line strings, newlines are escaped.
   >       "\> line
   >       "\> string
   > )
-  > 
+  >
   > (echo "\
   > multi
   > line
@@ -74,7 +74,7 @@ In multi-line strings, newlines are escaped.
   > ")
   > EOF
   (echo "multi\nline\nstring\n")
-  
+
   (echo "multi\nline\nstring\n")
 
 Comments are preserved.
@@ -97,7 +97,7 @@ Comments are preserved.
   > )
   > EOF
   ; comment
-  
+
   (; first comment
    a
    b ; comment for b
@@ -131,15 +131,15 @@ When a comment is at the end of a list, the ")" is on a own line.
   > EOF
   (a ; final attached comment
    )
-  
+
   (a ; final multiline
      ; comment
    )
-  
+
   (a
    ; final unattached
    )
-  
+
   (a
    ; final unattached
    ; multiline
@@ -153,7 +153,7 @@ Files in OCaml syntax are copied verbatim (but error when passed in stdin).
   [1]
   $ dune format-dune-file ocaml-syntax.dune
   (* -*- tuareg -*- *)
-  
+
   let () = Jbuild_plugin.V1.send {|
   (alias
    (name runtest)

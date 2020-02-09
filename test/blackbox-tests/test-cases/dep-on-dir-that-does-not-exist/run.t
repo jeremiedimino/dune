@@ -4,7 +4,7 @@
 # Currently we do something slightly buggy though.
 #
 # One of these behaviors would be reasonable instead:
-# 
+#
 # - refuse to run an action if the directory is missing (for a well-
 # defined definition of "missing")
 # - mkdir the directory unconditionally before running the action
@@ -26,7 +26,7 @@
   $ rm -r _build
   $ dune build @dir-that-is-later-created/foo
   $ dune build @print-contents-of-dir-that-is-later-created
-  listing: 
+  listing:
 
 ^ Wat: unrelated alias caused the listing to succeed.
 

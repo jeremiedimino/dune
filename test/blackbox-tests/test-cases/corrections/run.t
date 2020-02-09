@@ -44,7 +44,7 @@ When correction is no longer produced, dune no longer complains.
   > (rule (alias correction1)
   >   (deps text-file)
   >   (action
-  >     (progn 
+  >     (progn
   >     (diff? text-file text-file-corrected)))
   > )
   > EOF
@@ -127,4 +127,3 @@ correction is non-trivial.
   > EOF
 
   $ dune build @correction1 --sandbox copy
-

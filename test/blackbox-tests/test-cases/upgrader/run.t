@@ -20,7 +20,7 @@
   ;old style
   ;block comment
   ;
-  
+
   (rule
    (deps
     (:< x)
@@ -33,16 +33,16 @@
      z
      (run echo %{<})))
    (mode fallback))
-  
+
   ; other
   ; comment
-  
+
   (rule
    (copy x y))
-  
+
   ;(sexp
   ;    comment)
-  
+
   (include dune.inc)
 
   $ cat dune.inc

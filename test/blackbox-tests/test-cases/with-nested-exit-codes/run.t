@@ -13,9 +13,9 @@
   $ cat >> dune <<EOF
   > (rule
   >  (alias f)
-  >  (action (with-accepted-exit-codes 
+  >  (action (with-accepted-exit-codes
   >           1
-  >           (with-stdout-to out.txt 
+  >           (with-stdout-to out.txt
   >            (run ./exit.exe 1)))))
   > EOF
 
@@ -87,9 +87,9 @@
   $ cat >> dune <<EOF
   > (rule
   >  (alias g)
-  >  (action 
-  >   (with-accepted-exit-codes 
-  >    (not 0) 
+  >  (action
+  >   (with-accepted-exit-codes
+  >    (not 0)
   >    (setenv VAR myvar
   >     (chdir .
   >      (with-stdout-to out.txt

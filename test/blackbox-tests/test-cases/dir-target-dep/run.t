@@ -39,7 +39,7 @@ directory target and (mode promote) results in a crash
   Entering directory 'mode-promote'
   Error: exception Sys_error("Is a directory")
   Backtrace:
-  
+
   I must not segfault.  Uncertainty is the mind-killer.  Exceptions are
   the little-death that brings total obliteration.  I will fully express
   my cases.  Execution will pass over me and through me.  And when it

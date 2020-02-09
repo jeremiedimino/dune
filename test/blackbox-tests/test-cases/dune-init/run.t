@@ -176,7 +176,7 @@ Can add multiple libraries in the same directory
   $ cat ./_test_lib/dune
   (library
    (name test_lib1))
-  
+
   (library
    (name test_lib2)
    (libraries test_lib1))
@@ -228,11 +228,11 @@ Comments in dune files are preserved
   Success: initialized library component named test_lib2
   $ cat ./existing_project/src/dune
   ; A comment
-  
+
   (library
    ; Another comment
    (name test_lib))
-  
+
   (library
    (name test_lib2))
 
@@ -276,10 +276,10 @@ Adding fields to existing stanzas is currently not supported
   $ dune init exe test_bin ./_test_bin --libs test_lib2
   Error: Updating existing stanzas is not yet supported.
   A preexisting dune stanza conflicts with a generated stanza:
-  
+
   Generated stanza:
   (executable (name main) (libraries test_lib2))
-  
+
   Pre-existing stanza:
   (executable (name main) (libraries test_lib1))
   [1]
@@ -298,14 +298,14 @@ Can init and build a new executable project
 
   $ ls test_exec_proj/**
   test_exec_proj/test_exec_proj.opam
-  
+
   test_exec_proj/bin:
   dune
   main.ml
-  
+
   test_exec_proj/lib:
   dune
-  
+
   test_exec_proj/test:
   dune
   test_exec_proj.ml
@@ -330,10 +330,10 @@ Can init and build a new library project
 
   $ ls test_lib_proj/**
   test_lib_proj/test_lib_proj.opam
-  
+
   test_lib_proj/lib:
   dune
-  
+
   test_lib_proj/test:
   dune
   test_lib_proj.ml
@@ -364,14 +364,14 @@ Can init and build a project using Esy
 
   $ ls test_esy_proj/**
   test_esy_proj/package.json
-  
+
   test_esy_proj/bin:
   dune
   main.ml
-  
+
   test_esy_proj/lib:
   dune
-  
+
   test_esy_proj/test:
   dune
   test_esy_proj.ml

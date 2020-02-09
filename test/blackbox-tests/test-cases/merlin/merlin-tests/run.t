@@ -63,4 +63,3 @@ Adding the `echo` with expected output to the set of lines is a way of achieving
   FLG -w @1..3@5..28@30..39@43@46..47@49..57@61..62-40 -strict-sequence -strict-formats -short-paths -keep-locs
   S .
   sanitize_dot_merlin alias print-merlins-future-syntax
-

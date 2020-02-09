@@ -14,10 +14,10 @@ Formatting can be checked using the @fmt target:
   > EOF
   $ cat > enabled/dune << EOF
   > (library
-  > 
+  >
   > (name
   > lib_reason
-  > 
+  >
   > )
   > )
   > EOF
@@ -25,7 +25,7 @@ Formatting can be checked using the @fmt target:
   $ echo '(lang dune 2.0)' > lang2/default/dune-project
   $ cat > lang2/partial/dune-project << EOF
   > (lang dune 2.0)
-  > 
+  >
   > (formatting
   >  (enabled_for ocaml))
   > EOF

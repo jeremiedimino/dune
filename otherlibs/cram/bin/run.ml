@@ -71,6 +71,24 @@ let extend_build_path_prefix_map ~cwd =
   in
   Unix.putenv var s
 
+let is_space = function
+  | ' '
+  | '\t'
+  | '\r' ->
+    true
+  | _ -> false
+
+let rtrim s =
+  let len = String.length s in
+  let i = ref len in
+  while !i > 0 && is_space s.[!i - 1] do
+    decr i
+  done;
+  if !i < len then
+    String.sub s ~pos:0 ~len:!i
+  else
+    s
+
 let run ~sanitizer ~file lexbuf =
   let sanitizer_command =
     match sanitizer with
@@ -164,7 +182,19 @@ let run ~sanitizer ~file lexbuf =
     | WEXITED n -> n
     | _ -> 255
   in
-  let output = Io.String_path.read_file output_file in
+  let output =
+    let rec loop acc acc_with_empty_lines lines =
+      match lines with
+      | [] -> String.concat (List.rev acc) ~sep:""
+      | line :: lines -> (
+        match rtrim line with
+        | "" -> loop acc ("\n" :: acc_with_empty_lines) lines
+        | line ->
+          let acc = (line ^ "\n") :: acc_with_empty_lines in
+          loop acc acc lines )
+    in
+    loop [] [] (Io.String_path.lines_of_file output_file)
+  in
   if n <> 0 then (
     Printf.eprintf "Generated cram script exited with code %d!\n" n;
     Printf.eprintf "Script:\n";

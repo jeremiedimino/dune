@@ -13,7 +13,7 @@
   $ cat >> dune <<EOF
   > (rule
   >  (alias a)
-  >  (action (with-accepted-exit-codes 
+  >  (action (with-accepted-exit-codes
   >           1
   >           (with-stdout-to out.txt
   >            (run ./exit.exe 1)))))

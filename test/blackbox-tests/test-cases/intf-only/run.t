@@ -28,7 +28,7 @@ Errors:
   2 |  (name foo))
   Error: Some modules don't have an implementation.
   You need to add the following field to this stanza:
-  
+
     (modules_without_implementation x y)
   [1]
   $ dune build --display short --root b foo.cma

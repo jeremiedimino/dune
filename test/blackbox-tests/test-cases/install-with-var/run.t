@@ -61,7 +61,7 @@ extension of [src]:
   >  (install
   >   (section bin)
   >   (files (%{env:FOO=foobar.txt} as foo.txt))
-  >  )    
+  >  )
   > EOF
 
   $ dune build @install
@@ -78,7 +78,7 @@ This is fine if the destination extension is already .exe:
   >  (install
   >   (section bin)
   >   (files (%{env:FOO=foobar.txt} as foo.exe))
-  >  )    
+  >  )
   > EOF
 
   $ dune build @install
@@ -89,7 +89,7 @@ Or if the extension of source is clearly not .exe:
   >  (install
   >   (section bin)
   >   (files (%{env:FOO=foobar}.txt as foo))
-  >  )    
+  >  )
   > EOF
 
   $ dune build @install
@@ -100,7 +100,7 @@ Exe basename needs to be fully known if dst is missing though:
   >  (install
   >   (section bin)
   >   (files %{env:FOO=foobar}.txt)
-  >  )    
+  >  )
   > EOF
 
   $ dune build @install
@@ -117,7 +117,7 @@ When basename is fully known, all is well:
   >  (install
   >   (section bin)
   >   (files %{env:FOO=.}/foobar.txt)
-  >  )    
+  >  )
   > EOF
 
   $ dune build @install

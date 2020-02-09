@@ -134,7 +134,6 @@ First the motivating case.
   d/_build/install/default/lib/menhirSdk/META
 
   $ cat d/_build/install/default/lib/dummy/META
-  
 
   $ cat d/_build/install/default/lib/menhirLib/META
   requires = "menhir.lib"

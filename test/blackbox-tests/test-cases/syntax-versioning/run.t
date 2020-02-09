@@ -34,7 +34,7 @@
                                               ^^
   Error: %{<} was deleted in version 1.0 of the dune language.
   Use a named dependency instead:
-  
+
     (deps (:x <dep>) ...)
      ... %{x} ...
   [1]

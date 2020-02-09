@@ -12,7 +12,7 @@ Aliases should not be resolved in vendored sub directories
 
 When compiling vendored code, all warnings should be disabled
 
-  $ dune build --root warnings @no-warnings-please 
+  $ dune build --root warnings @no-warnings-please
   Entering directory 'warnings'
   There should be no OCaml warning above!
 

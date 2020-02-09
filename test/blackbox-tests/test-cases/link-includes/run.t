@@ -36,4 +36,3 @@ Then we make sure that it works fine.
   Entering directory 'exe'
   Entering directory 'exe'
   lib1: 42
-

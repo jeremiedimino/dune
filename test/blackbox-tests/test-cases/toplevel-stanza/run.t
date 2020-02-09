@@ -3,7 +3,7 @@ Simple example to run toplevel
   Entering directory 'simple'
   Entering directory 'simple'
           OCaml version REDACTED
-  
+
   Foo.x = 42
 
 
@@ -12,5 +12,5 @@ Running toplevel with variants
   Entering directory 'variants'
   Entering directory 'variants'
           OCaml version REDACTED
-  
+
   Foo.x = 42

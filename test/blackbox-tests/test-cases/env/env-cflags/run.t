@@ -23,4 +23,3 @@
 
   $ dune exec --profile default ./run/bar.exe
   TEST_CPP defined.
-
