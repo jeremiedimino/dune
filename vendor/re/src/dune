@@ -1,5 +1,5 @@
 (library
- (name        dune_re)
- (public_name dune-private-libs.dune_re)
+ (public_name re)
+ (wrapped false)
  (flags       (:standard -w -50))
  (synopsis "Internal Dune library, do not use!"))

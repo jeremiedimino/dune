@@ -1,6 +1,5 @@
 open Stdune
 open Dune
-module Re = Dune_re
 
 let () =
   Path.set_root (Path.External.cwd ());

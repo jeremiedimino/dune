@@ -59,24 +59,7 @@ executable was built.
 "))
 
 (package
- (name dune-private-libs)
- (depends
-  (ocaml (>= 4.07)))
- (synopsis "Private libraries of Dune")
- (description "\
-!!!!!!!!!!!!!!!!!!!!!!
-!!!!! DO NOT USE !!!!!
-!!!!!!!!!!!!!!!!!!!!!!
-
-This package contains code that is shared between various dune-xxx
-packages. However, it is not meant for public consumption and provides
-no stability guarantee.
-"))
-
-(package
  (name dune-configurator)
- (depends
-  (dune-private-libs (= :version)))
  (synopsis "Helper library for gathering system configuration")
  (description "\
 dune-configurator is a small library that helps writing OCaml scripts that
@@ -89,28 +72,28 @@ Among other things, dune-configurator allows one to:
 - generate config.h file
 "))
 
-(package
- (name dune-action-plugin)
- (depends
-  dune-glob
-  (ppx_expect :with-test)
-  (dune-private-libs (= :version)))
- (synopsis "[experimental] API for writing dynamic Dune actions")
- (description "\
+; (package
+;  (name dune-action-plugin)
+;  (depends
+;   dune-glob
+;   (ppx_expect :with-test)
+;   (dune-private-libs (= :version)))
+;  (synopsis "[experimental] API for writing dynamic Dune actions")
+;  (description "\
 
-This library is experimental. No backwards compatibility is implied.
+; This library is experimental. No backwards compatibility is implied.
 
-dune-action-plugin provides an API for writing dynamic Dune actions.
-Dynamic dune actions do not need to declare their dependencies
-upfront; they are instead discovered automatically during the
-execution of the action.
-"))
+; dune-action-plugin provides an API for writing dynamic Dune actions.
+; Dynamic dune actions do not need to declare their dependencies
+; upfront; they are instead discovered automatically during the
+; execution of the action.
+; "))
 
-(package
- (name dune-glob)
- (depends
-  (dune-private-libs (= :version)))
- (synopsis "Glob string matching language supported by dune")
- (description "\
-dune-glob provides a parser and interpreter for globs as \
-understood by dune language."))
+; (package
+;  (name dune-glob)
+;  (depends
+;   (dune-private-libs (= :version)))
+;  (synopsis "Glob string matching language supported by dune")
+;  (description "\
+; dune-glob provides a parser and interpreter for globs as \
+; understood by dune language."))

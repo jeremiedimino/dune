@@ -16,5 +16,5 @@ SRC=$TMP/opam-file-format.$version
 
 cp -v $SRC/src/*.{ml,mli,mll,mly} opam-file-format/src
 
-git checkout opam-file-format/src/dune
+git checkout opam-file-format/src/dune opam-file-format/dune-project
 git add -A .

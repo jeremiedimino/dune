@@ -1,7 +1,6 @@
 open Stdune
 open Cmdliner
 open Import.Let_syntax
-module Re = Dune_re
 module Configurator = Configurator.V1
 
 let rewrite_paths =

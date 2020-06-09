@@ -25,5 +25,5 @@ cp -v $SRC/_build/default/export/incremental_cycles.ml incremental-cycles/src/
 cp -v $SRC/export/incremental_cycles_intf.ml incremental-cycles/src/
 cp -v $SRC/export/incremental_cycles.mli incremental-cycles/src/
 
-git checkout incremental-cycles/src/dune
+git checkout incremental-cycles/src/dune incremental-cycles/dune-project
 git add -A .

@@ -23,5 +23,5 @@ for m in re re_automata re_cset re_fmt; do
     done
 done
 
-git checkout re/src/jbuild
+git checkout re/src/dune re/dune-project
 git add -A .
