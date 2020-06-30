@@ -724,21 +724,27 @@ end = struct
     let fiber =
       Fiber.Var.set t_var t (fun () -> Fiber.with_error_handler f ~on_error)
     in
+    let pump_events_result = ref None in
     match
       Fiber.run
-        (let* user_action_result = Fiber.fork (fun () -> fiber) in
-         let* pump_events_result = pump_events t in
-         let* user_action_result = Fiber.Future.peek user_action_result in
-         Fiber.return (pump_events_result, user_action_result))
+        (Fiber.fork_and_join
+           (fun () -> fiber)
+           (fun () ->
+              let* res = pump_events t in
+              pump_events_result := Some res;
+              Fiber.return ())
+           >>| fst)
     with
-    | None -> Code_error.raise "[Scheduler.pump_events] got stuck somehow" []
     | exception exn -> Error (Exn (exn, Printexc.get_raw_backtrace ()))
-    | Some (a, b) -> (
-      match (a, b) with
-      | Done, None -> Error Never
-      | Done, Some res -> Ok res
-      | Got_signal, _ -> Error Got_signal
-      | Files_changed, _ -> Error Files_changed )
+    | res ->
+      match !pump_events_result with
+      | None -> Code_error.raise "[Scheduler.pump_events] got stuck somehow" []
+      | Some pump_events_result -> (
+          match pump_events_result, res with
+          | Done, None -> Error Never
+          | Done, Some res -> Ok res
+          | Got_signal, _ -> Error Got_signal
+          | Files_changed, _ -> Error Files_changed )
 
   let run_and_cleanup t f =
     let res = run t f in
