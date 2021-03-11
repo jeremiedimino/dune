@@ -228,49 +228,6 @@ let return x k = k x
 
 let never _ = ()
 
-module O = struct
-  let ( >>> ) a b k = a (fun () -> b k)
-
-  let ( >>= ) t f k = t (fun x -> f x k)
-
-  let ( >>| ) t f k = t (fun x -> k (f x))
-
-  let ( let+ ) = ( >>| )
-
-  let ( let* ) = ( >>= )
-end
-
-open O
-
-let map t ~f = t >>| f
-
-let bind t ~f = t >>= f
-
-let both a b =
-  let* x = a in
-  let* y = b in
-  return (x, y)
-
-let sequential_map l ~f =
-  let rec loop l acc =
-    match l with
-    | [] -> return (List.rev acc)
-    | x :: l ->
-      let* x = f x in
-      loop l (x :: acc)
-  in
-  loop l []
-
-let sequential_iter l ~f =
-  let rec loop l =
-    match l with
-    | [] -> return ()
-    | x :: l ->
-      let* () = f x in
-      loop l
-  in
-  loop l
-
 type ('a, 'b) fork_and_join_state =
   | Nothing_yet
   | Got_a of 'a
@@ -311,6 +268,53 @@ let fork_and_join_unit fa fb k =
         EC.deref ()
       | Got_a () -> k b
       | Got_b _ -> assert false)
+
+module O = struct
+  let ( >>> ) a b k = a (fun () -> b k)
+
+  let ( >>= ) t f k = t (fun x -> f x k)
+
+  let ( >>| ) t f k = t (fun x -> k (f x))
+
+  let ( let+ ) = ( >>| )
+
+  let ( let* ) = ( >>= )
+
+  let ( and* ) a b = fork_and_join (fun () -> a) (fun () -> b)
+
+  let ( and+ ) = ( and* )
+end
+
+open O
+
+let map t ~f = t >>| f
+
+let bind t ~f = t >>= f
+
+let both a b =
+  let* x = a in
+  let* y = b in
+  return (x, y)
+
+let sequential_map l ~f =
+  let rec loop l acc =
+    match l with
+    | [] -> return (List.rev acc)
+    | x :: l ->
+      let* x = f x in
+      loop l (x :: acc)
+  in
+  loop l []
+
+let sequential_iter l ~f =
+  let rec loop l =
+    match l with
+    | [] -> return ()
+    | x :: l ->
+      let* () = f x in
+      loop l
+  in
+  loop l
 
 let list_of_option_array =
   let rec loop arr i acc =

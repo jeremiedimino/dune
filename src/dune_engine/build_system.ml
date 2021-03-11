@@ -5,20 +5,22 @@ open Memo.Build.O
 let () = Hooks.End_of_build.always Memo.reset
 
 module Fs : sig
-  val mkdir_p : Path.Build.t -> unit
+  val mkdir_p : Path.Build.t -> unit Memo.Build.t
 
   (** Creates directory if inside build path, otherwise asserts that directory
       exists. *)
-  val mkdir_p_or_check_exists : loc:Loc.t -> Path.t -> unit
+  val mkdir_p_or_check_exists : loc:Loc.t -> Path.t -> unit Memo.Build.t
 
-  val assert_exists : loc:Loc.t -> Path.t -> unit
+  val assert_exists : loc:Loc.t -> Path.t -> unit Memo.Build.t
 end = struct
   let mkdir_p_def =
     Memo.create "mkdir_p" ~doc:"mkdir_p"
       ~input:(module Path.Build)
       ~output:(Simple (module Unit))
-      ~visibility:Hidden Sync
-      (fun p -> Path.mkdir_p (Path.build p))
+      ~visibility:Hidden Async
+      (fun p ->
+        Path.mkdir_p (Path.build p);
+        Memo.Build.return ())
 
   let mkdir_p = Memo.exec mkdir_p_def
 
@@ -26,12 +28,15 @@ end = struct
     Memo.create "assert_path_exists" ~doc:"Path.exists"
       ~input:(module Path)
       ~output:(Simple (module Bool))
-      ~visibility:Hidden Sync Path.exists
+      ~visibility:Hidden Async
+      (fun p -> Memo.Build.return (Path.exists p))
 
   let assert_exists ~loc path =
-    if not (Memo.exec assert_exists_def path) then
+    Memo.exec assert_exists_def path >>| function
+    | false ->
       User_error.raise ~loc
         [ Pp.textf "%S does not exist" (Path.to_string_maybe_quoted path) ]
+    | true -> ()
 
   let mkdir_p_or_check_exists ~loc path =
     match Path.as_in_build_dir path with
@@ -127,14 +132,27 @@ module Alias0 = struct
   open Action_builder.O
 
   let dep_rec_internal ~name ~dir ~ctx_dir =
-    let f dir acc =
+    let f dir =
       let path = Path.Build.append_source ctx_dir (File_tree.Dir.path dir) in
-      Action_builder.map2 ~f:( || ) acc
-        (Action_builder.dep_on_alias_if_exists (make ~dir:path name))
+      Action_builder.dep_on_alias_if_exists (make ~dir:path name)
     in
-    File_tree.Dir.fold dir ~traverse:Sub_dirs.Status.Set.normal_only
-      ~init:(Action_builder.return false)
-      ~f
+    let module A = struct
+      type t = bool Action_builder.t
+
+      let empty = Action_builder.return false
+
+      let combine = Action_builder.map2 ~f:( || )
+    end in
+    (* jeremiedimino: this wrapping is non-sense, we should be able to do the
+       map_reduce directly in the Action_builder monad. TBC. *)
+    let* x =
+      Action_builder.memo_build
+        (File_tree.Dir.map_reduce
+           (module A)
+           dir ~traverse:Sub_dirs.Status.Set.normal_only
+           ~f:(fun x -> Memo.Build.return (f x)))
+    in
+    x
 
   let dep_rec t ~loc =
     let ctx_dir, src_dir =
@@ -1192,22 +1210,23 @@ let get_rule_or_source t path =
 
 let all_targets t =
   let root = File_tree.root () in
-  Context_name.Map.fold t.contexts
-    ~init:(Memo.Build.return Path.Build.Set.empty) ~f:(fun ctx acc ->
-      File_tree.Dir.fold root ~traverse:Sub_dirs.Status.Set.all ~init:acc
-        ~f:(fun dir acc ->
-          let* acc = acc in
+  Memo.Build.parallel_map (Context_name.Map.values t.contexts) ~f:(fun ctx ->
+      File_tree.Dir.map_reduce
+        (module Path.Build.Set)
+        root ~traverse:Sub_dirs.Status.Set.all
+        ~f:(fun dir ->
           load_dir
             ~dir:
               (Path.build
                  (Path.Build.append_source ctx.Build_context.build_dir
                     (File_tree.Dir.path dir)))
           >>| function
-          | Non_build _ -> acc
+          | Non_build _ -> Path.Build.Set.empty
           | Build { rules_here; rules_of_alias_dir; _ } ->
-            List.fold_left ~init:acc ~f:Path.Build.Set.add
+            Path.Build.Set.of_list
               (Path.Build.Map.keys rules_of_alias_dir
               @ Path.Build.Map.keys rules_here)))
+  >>| Path.Build.Set.union_all
 
 let expand_alias_gen alias ~eval_build_request ~paths_of_facts ~paths_union_all
     =
@@ -1401,7 +1420,7 @@ end = struct
       (let open Fiber.O in
       let build_deps deps = Memo.Build.run (build_deps deps) in
       Stats.new_evaluated_rule ();
-      Fs.mkdir_p dir;
+      let* () = Memo.Build.run (Fs.mkdir_p dir) in
       let env = Rule.effective_env rule in
       let loc = Rule.loc rule in
       let is_action_dynamic = Action.is_dynamic action in
@@ -1575,25 +1594,34 @@ end = struct
           | None ->
             let () = remove_targets () in
             pending_targets := Path.Build.Set.union targets !pending_targets;
-            let sandboxed, action =
+            let* sandboxed, action =
               match sandbox with
-              | None -> (None, action)
+              | None -> Fiber.return (None, action)
               | Some (sandbox_dir, sandbox_mode) ->
                 Path.rm_rf (Path.build sandbox_dir);
                 let sandboxed path : Path.Build.t =
                   Path.Build.append_local sandbox_dir (Path.Build.local path)
                 in
-                Dep.Facts.dirs deps
-                |> Path.Set.iter ~f:(fun path ->
-                       match Path.as_in_build_dir path with
-                       | None -> Fs.assert_exists ~loc path
-                       | Some path -> Fs.mkdir_p (sandboxed path));
-                Fs.mkdir_p (sandboxed dir);
+                let* () =
+                  Fiber.parallel_iter_set
+                    (module Path.Set)
+                    (Dep.Facts.dirs deps)
+                    ~f:(fun path ->
+                      Memo.Build.run
+                        (match Path.as_in_build_dir path with
+                        | None -> Fs.assert_exists ~loc path
+                        | Some path -> Fs.mkdir_p (sandboxed path)))
+                in
+                let+ () = Memo.Build.run (Fs.mkdir_p (sandboxed dir)) in
                 ( Some sandboxed
                 , Action.sandbox action ~sandboxed ~mode:sandbox_mode ~deps )
+            and* () =
+              let chdirs = Action.chdirs action in
+              Fiber.parallel_iter_set
+                (module Path.Set)
+                chdirs
+                ~f:(fun p -> Memo.Build.run (Fs.mkdir_p_or_check_exists ~loc p))
             in
-            let chdirs = Action.chdirs action in
-            Path.Set.iter chdirs ~f:Fs.(mkdir_p_or_check_exists ~loc);
             let+ exec_result =
               with_locks t locks ~f:(fun () ->
                   let copy_files_from_sandbox sandboxed =

@@ -19,6 +19,9 @@ module type S = sig
 
   val union : t -> t -> t
 
+  (** Same as [union], to satisfy the [Monoid.S] interface *)
+  val combine : t -> t -> t
+
   val inter : t -> t -> t
 
   val diff : t -> t -> t

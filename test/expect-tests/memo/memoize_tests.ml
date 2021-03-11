@@ -189,60 +189,19 @@ let%expect_test _ =
     2001
   |}]
 
-let sync_int_fn_create name =
-  Memo.create name
-    ~input:(module Int)
-    ~visibility:(Public Dune_lang.Decoder.int) Sync
-
-let counter = ref 0
-
-let sync_fib =
-  let mfib = Fdecl.create Dyn.Encoder.opaque in
-  let compfib x =
-    let mfib = Memo.exec (Fdecl.get mfib) in
-    counter := !counter + 1;
-    if x <= 1 then
-      x
-    else
-      mfib (x - 1) + mfib (x - 2)
-  in
-  let fn =
-    sync_int_fn_create "sync-fib" ~output:(Allow_cutoff (module Int)) compfib
-  in
-  Fdecl.set mfib fn;
-  fn
-
-let%expect_test _ =
-  Format.printf "%d@." (Memo.exec sync_fib 2000);
-  Format.printf "%d@." !counter;
-  Format.printf "%d@." (Memo.exec sync_fib 1800);
-  Format.printf "%d@." !counter;
-  [%expect
-    {|
-    2406280077793834213
-    2001
-    3080005411477819488
-    2001
-  |}]
-
 let make_f name f ~input ~output =
   Memo.create name ~input ~visibility:Hidden ~output:(Allow_cutoff output)
-    ~doc:"" Sync f
+    ~doc:"" Async f
 
 let id =
   let f =
-    make_f "id" (fun s -> s) ~input:(module String) ~output:(module String)
+    make_f "id" Memo.Build.return ~input:(module String) ~output:(module String)
   in
   Memo.exec f
 
-module Test_lazy (Lazy : sig
-  type 'a t
+module Memo_lazy = struct
+  module Lazy = Memo.Lazy
 
-  val create : (unit -> 'a) -> 'a t
-
-  val force : 'a t -> 'a
-end) =
-struct
   module Lazy_string = struct
     type t = string Lazy.t
 
@@ -258,7 +217,8 @@ struct
   let lazy_memo =
     let f =
       make_f "lazy_memo"
-        (fun s -> Lazy.create (fun () -> id ("lazy: " ^ s)))
+        (fun s ->
+          Memo.Build.return (Lazy.Async.create (fun () -> id ("lazy: " ^ s))))
         ~input:(module String)
         ~output:(module Lazy_string)
     in
@@ -267,7 +227,9 @@ struct
   let f1_def, f1 =
     let f =
       make_f "f1"
-        (fun s -> "f1: " ^ Lazy.force (lazy_memo s))
+        (fun s ->
+          let+ s = Lazy.force (lazy_memo s) in
+          "f1: " ^ s)
         ~input:(module String)
         ~output:(module String)
     in
@@ -276,7 +238,9 @@ struct
   let f2_def, f2 =
     let f =
       make_f "f2"
-        (fun s -> "f2: " ^ Lazy.force (lazy_memo s))
+        (fun s ->
+          let+ s = Lazy.force (lazy_memo s) in
+          "f2: " ^ s)
         ~input:(module String)
         ~output:(module String)
     in
@@ -289,36 +253,6 @@ struct
     let conv = option (list (pair (option string) (fun x -> x))) in
     pair conv conv (get_deps f1_def "foo", get_deps f2_def "foo")
 end
-
-module Builtin_lazy = Test_lazy (struct
-  include Caml_lazy
-
-  let create = from_fun
-end)
-
-let%expect_test _ =
-  Builtin_lazy.run () |> Dyn.Encoder.(pair string string) |> print_dyn;
-  [%expect {|
-    ("f1: lazy: foo", "f2: lazy: foo")
-  |}]
-
-let%expect_test _ =
-  (* Bug: dependency on [lazy] is only registered by one of the dependants. This
-     means we should never use [lazy] together with [Memo]. We can use
-     [Memo.lazy_] though (see below) *)
-  Builtin_lazy.deps () |> print_dyn;
-  [%expect
-    {|
-      (Some [ (Some "lazy_memo", "foo") ],
-      Some [ (Some "lazy_memo", "foo"); (Some "id", "lazy: foo") ])
-    |}]
-
-module Memo_lazy = Test_lazy (struct
-  include Memo.Lazy
-
-  (* Here we hide the optional argument [cutoff] of [Memo.Lazy.create]. *)
-  let create f = create f
-end)
 
 let%expect_test _ =
   Memo_lazy.run () |> Dyn.Encoder.(pair string string) |> print_dyn;

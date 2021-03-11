@@ -54,6 +54,8 @@ module Make (Key : Map_intf.Key) (M : Map_intf.S with type key = Key.t) = struct
 
   let union_all l = union_map l ~f:(fun x -> x)
 
+  let combine = union
+
   exception Found of elt
 
   let find t ~f =

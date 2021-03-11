@@ -69,6 +69,7 @@ module Seq = Seq
 module Temp = Temp
 module Queue = Queue
 module Caller_id = Caller_id
+module Monoid = Monoid
 
 external reraise : exn -> _ = "%reraise"
 

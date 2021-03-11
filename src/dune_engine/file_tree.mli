@@ -29,7 +29,7 @@ module Dir : sig
 
   type error = Missing_run_t of Cram_test.t
 
-  val cram_tests : t -> (Cram_test.t, error) result list
+  val cram_tests : t -> (Cram_test.t, error) result list Memo.Build.t
 
   val path : t -> Path.Source.t
 
@@ -37,13 +37,16 @@ module Dir : sig
 
   val file_paths : t -> Path.Source.Set.t
 
-  val sub_dirs : t -> (string * t) list
+  val parallel_map_sub_dirs : t -> (string * t) list
 
-  val fold_dune_files :
-       t
-    -> init:'acc
-    -> f:(basename:string option -> t -> Dune_file.t -> 'acc -> 'acc)
-    -> 'acc
+  (** Traverse sub-directories recursively, pass them to [f] and combine
+      intermediate results into a single one via [M.combine]. *)
+  val map_reduce :
+       (module Monoid.S with type t = 'a)
+    -> t
+    -> traverse:Sub_dirs.Status.Set.t
+    -> f:(t -> 'a Memo.Build.t)
+    -> 'a Memo.Build.t
 
   val sub_dir_paths : t -> Path.Source.Set.t
 
@@ -52,9 +55,6 @@ module Dir : sig
   val vcs : t -> Vcs.t option
 
   val status : t -> Sub_dirs.Status.t
-
-  val fold :
-    t -> traverse:Sub_dirs.Status.Set.t -> init:'a -> f:(t -> 'a -> 'a) -> 'a
 
   (** Return the contents of the dune (or jbuild) file in this directory *)
   val dune_file : t -> Dune_file.t option

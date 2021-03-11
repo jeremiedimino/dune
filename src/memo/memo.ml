@@ -4,16 +4,10 @@ module Function = Function
 
 let track_locations_of_lazy_values = ref false
 
+type 'a forbidden = 'a
+
 module Build = struct
   include Fiber
-
-  module O = struct
-    include Fiber.O
-
-    let ( and* ) a b = fork_and_join (fun () -> a) (fun () -> b)
-
-    let ( and+ ) = ( and* )
-  end
 
   let run = Fun.id
 

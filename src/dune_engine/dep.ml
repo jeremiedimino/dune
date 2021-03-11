@@ -218,32 +218,65 @@ module Set = struct
   let dir_without_files_dep dir =
     file_selector (File_selector.create ~dir Predicate.false_)
 
-  let source_tree_gen dir ~empty ~add_empty_dir ~add_paths =
+  module type Source_tree_result = sig
+    type t
+
+    val empty : t
+
+    val combine : t -> t -> t
+
+    val of_empty_dir : Path.t -> t
+
+    val of_paths : Path.Set.t -> t
+  end
+
+  let source_tree_gen (type a) (module M : Source_tree_result with type t = a)
+      dir =
     let prefix_with, dir = Path.extract_build_context_dir_exn dir in
     match File_tree.find_dir dir with
-    | None -> empty
+    | None -> Memo.Build.return M.empty
     | Some dir ->
-      File_tree.Dir.fold dir ~init:empty ~traverse:Sub_dirs.Status.Set.all
-        ~f:(fun dir acc ->
+      File_tree.Dir.map_reduce
+        (module M)
+        dir ~traverse:Sub_dirs.Status.Set.all
+        ~f:(fun dir ->
           let files = File_tree.Dir.files dir in
           let path = Path.append_source prefix_with (File_tree.Dir.path dir) in
           match String.Set.is_empty files with
-          | true -> add_empty_dir acc path
+          | true -> Memo.Build.return (M.of_empty_dir path)
           | false ->
             let paths =
               String.Set.fold files ~init:Path.Set.empty ~f:(fun fn acc ->
                   Path.Set.add acc (Path.relative path fn))
             in
-            add_paths acc paths)
+            Memo.Build.return (M.of_paths paths))
 
   let source_tree =
-    source_tree_gen ~empty ~add_paths ~add_empty_dir:(fun t dir ->
-        add t (dir_without_files_dep dir))
+    let module M = struct
+      type nonrec t = t
+
+      let of_empty_dir d = singleton (dir_without_files_dep d)
+
+      let of_paths = add_paths empty
+
+      let empty = empty
+
+      let combine = union
+    end in
+    source_tree_gen (module M)
 
   let source_tree_with_file_set =
-    source_tree_gen ~empty:(empty, Path.Set.empty)
-      ~add_paths:(fun (deps, paths) more_paths ->
-        (add_paths deps more_paths, Path.Set.union paths more_paths))
-      ~add_empty_dir:(fun (deps, paths) dir ->
-        (add deps (dir_without_files_dep dir), paths))
+    let module M = struct
+      type nonrec t = t * Path.Set.t
+
+      let of_paths paths = (add_paths empty paths, paths)
+
+      let of_empty_dir d =
+        (singleton (dir_without_files_dep d), Path.Set.singleton d)
+
+      let empty = (empty, Path.Set.empty)
+
+      let combine (a, b) (c, d) = (union a c, Path.Set.union b d)
+    end in
+    source_tree_gen (module M)
 end
